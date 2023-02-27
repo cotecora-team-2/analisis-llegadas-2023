@@ -1,0 +1,177 @@
+---
+title: "Post-mortem Coahuila 2017"
+format: 
+  html:
+    embed-resources: true
+---
+
+## Descripción
+
+
+
+## Resumen
+
+```{r}
+#| code-fold: true
+#| message: false
+#| warning: false
+library(tidyverse)
+library(quickcountmx)
+source("../R/crear-tablas-alianzas.R")
+#remotes::install_github("cotecora-team-2/quickcountmx",
+#                        ref = "main-2022")
+```
+
+
+
+```{r}
+
+coah_muestra_tbl <- read_csv("../datos/Coah_muestra_31052017.csv")
+coah_remesa_tbl <- read_csv("../datos/COA_INFORMACION_DE_CASILLAS_REPORTADAS_Y_RELACION_DE_CASILLAS_INTEGRADAS_AL_CALCULO_FINAL.csv") |> 
+  mutate(fecha_hora = lubridate::mdy_hm(`FECHA Y HORA DE REPORTE`)) |> 
+  arrange(fecha_hora) |> 
+  mutate(casillas_rep = row_number()) |> 
+  rename(LISTA_NOMINAL = `LISTA NOMINAL`) |> 
+  mutate(cand_1 = PRI + PVEM + PNA + PSDI + PRC + PCP + PJ + COAL1,
+         cand_2 = PAN + PUDC + PES + PPC + COAL2,
+         cand_3 = MORENA,
+         cand_4 = `GUERRERO GARCIA JAVIER`,
+         cand_5 = PRD,
+         cand_6 = PT,
+         cand_7 = `SALINAS VALDEZ LUIS HORACIO`,
+         otros = `CANDIDATO INDEPENDIENTE 1` + `VOTOS CNR` + `VOTOS NULOS`) |> 
+  mutate(total = cand_1 + cand_2 + cand_3 + cand_4 + cand_5 + cand_6 + cand_7 + otros) |> 
+  mutate(DISTRITO = as.character(DISTRITO)) |> 
+  mutate(horas = difftime(fecha_hora, min(fecha_hora), units = "hours")) |> 
+  mutate(horas = as.numeric(horas))
+```
+
+```{r}
+ggplot(coah_remesa_tbl, aes(x = horas, y = casillas_rep / nrow(coah_muestra_tbl))) +
+  geom_line()
+```
+```{r}
+coah_muestra_tbl <- coah_muestra_tbl |>
+  rename(ID_DISTRITO_LOCAL = DIST_LOC ) |> 
+  left_join(coah_tidy |> mutate(CASILLA = ifelse(CASILLA %in% c("C10", "C20"), 
+                          CASILLA, str_remove(CASILLA, "0"))))
+```
+
+
+```{r}
+coah_muestra_tbl <- coah_muestra_tbl |> left_join(coah_remesa_tbl |> dplyr::select(FOLIO, horas))
+```
+
+## Muestra completa vs remesa
+
+```{r}
+estratos_coah_tbl <- coah |> count(ID_DISTRITO_LOCAL) |> 
+  mutate(ID_DISTRITO_LOCAL = as.character(ID_DISTRITO_LOCAL))
+coah_muestra_tbl <- mutate(coah_muestra_tbl, ID_DISTRITO_LOCAL = as.character(ID_DISTRITO_LOCAL))
+est_remesa_coah_tbl <- ratio_estimation(coah_muestra_tbl |> filter(!is.na(horas), !is.na(cand_pan)), ID_DISTRITO_LOCAL, 
+  estratos_coah_tbl, n_stratum = n, parties = c(cand_pri:otros, MORENA, PRD, PT)) |> 
+  mutate(tipo = "remesa")
+est_remesa_coah_tbl
+```
+
+```{r}
+est_muestra_coah_tbl <- ratio_estimation(coah_muestra_tbl |> filter(!is.na(cand_pan)), ID_DISTRITO_LOCAL, 
+  estratos_coah_tbl, n_stratum = n, parties = c(cand_pri:otros, MORENA, PRD, PT)) |> 
+  mutate(tipo = "muestra")
+est_muestra_coah_tbl
+```
+
+```{r}
+res <- tibble(party = c("cand_pri", "cand_pan", "cand_morena", "cand_4"),
+              prop_obs = c(38.90, 36.40, 11.91, 8.31))
+bind_rows(est_muestra_coah_tbl, est_remesa_coah_tbl) |> 
+  filter(party %in% c("cand_pri", "cand_pan", "MORENA")) |> 
+  mutate(party = ifelse(party=="MORENA", "cand_morena", party)) |> 
+  ggplot() +
+  geom_linerange(aes(x = tipo, ymin = prop - 2 * std_error,
+                      ymax = prop + 2 * std_error)) + 
+  geom_point(aes(x = tipo, y = prop)) +
+  geom_hline(data = res |> filter(prop_obs > 10), aes(yintercept = prop_obs), 
+             colour = "red") +
+  facet_wrap(~ party, scales = "free_y") +
+  xlab("Muestra utilizada")
+```
+
+- La muestra completa hubiera dado la respuesta correcta, mientras
+que la remesa es inconcluyente con la tendencia incorrecta
+- El sesgo observado en la remesa con respecto a la muestra completa es 
+aproximadamente del mismo tamaño que el error de estimación. (un poco más
+de un punto porcentual).
+
+
+
+
+
+
+```{r}
+ggplot(coah_remesa_tbl, aes(x = (cand_1), y = horas, group = DISTRITO)) + geom_point() +
+  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~ DISTRITO)
+lm(horas ~ log(cand_1 + cand_2) + factor(DISTRITO), coah_remesa_tbl)
+```
+
+```{r}
+ggplot(coah_remesa_tbl, aes(x = log(cand_1), y = fecha_hora, group = DISTRITO)) + geom_point() +
+  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~ DISTRITO)
+coefs_0 <- lm(horas ~ I((cand_1 + cand_2 + 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
+coefs_1 <- lm(horas ~ I((cand_1 + 1)/200)  + factor(DISTRITO), coah_remesa_tbl) |> coef()
+coefs_2 <- lm(horas ~ I((cand_2 + 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
+coefs_3 <- lm(horas ~ I((cand_3 + 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
+coefs_4 <- lm(horas ~ I((total+ 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
+coefs_0[2:3]
+coefs_1[2:3]
+coefs_2[2:3]
+coefs_3[2:3]
+coefs_4[2:3]
+
+```
+
+
+
+```{r}
+ggplot(coah_remesa_tbl, aes(x = cand_3, y = fecha_hora, group = DISTRITO, colour = log(1+cand_1))) + geom_point() +
+  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~ DISTRITO)
+```
+
+## Examinar patrones
+
+
+```{r}
+
+xlogx <- function(x){
+  salida <- -sum(x[x>0] * log(x[x>0]))
+  salida
+}
+
+coah <- coah |> mutate(id = row_number())
+coah_largo <- coah |> select(id, PAN:CAND_IND2) |> 
+  pivot_longer(cols = PAN:CAND_IND2, names_to = "partido", values_to = "votos")
+patrones_tbl <- coah_largo |> group_by(id) |> 
+  mutate(prop = votos / sum(votos)) |> 
+  summarise(s = sum(xlogx(prop)))
+coah <- left_join(coah, patrones_tbl)
+```
+
+```{r}
+ggplot(coah, aes(x = s)) + geom_histogram() + facet_wrap(~ ID_DISTRITO_LOCAL)
+```
+
+```{r}
+coah_remesa_largo <- coah_remesa_tbl  |> select(FOLIO, PAN:COAL2) |> 
+  pivot_longer(cols = PAN:COAL2, names_to = "partido", values_to = "votos")
+patrones_remesas_tbl <- coah_remesa_largo |> group_by(FOLIO) |> 
+  mutate(prop = votos / sum(votos)) |> 
+  summarise(s = sum(xlogx(prop)))
+
+coah_remesa_tbl <- coah_remesa_tbl |> left_join(patrones_remesas_tbl)
+```
+
+```{r}
+ggplot(coah_remesa_tbl, aes(x = horas, y = s)) + geom_point()  +
+  facet_wrap(~ DISTRITO) + geom_smooth(method = "lm")
+```
+
