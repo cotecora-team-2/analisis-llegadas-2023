@@ -1,5 +1,8 @@
 ---
 title: "Post-mortem Coahuila 2017"
+execute:
+  echo: false
+  warning: false
 format: 
   html:
     embed-resources: true
@@ -7,7 +10,30 @@ format:
 
 ## Descripción
 
+Consideramos los resultados del Conteo Rápido de las elecciones de gobernador de
+Coahuila 2017.
 
+
+- El diseño fue estratificado por distrito local.
+- El tamaño de muestra seleccionado fue de alrededor de 700 casillas, que equivale
+a una fracción de muestreo cercana al 20%.
+- A las 2:05 am del siguiente día de la elección se presenta el último reporte
+de COTECORA Coahuila, con 54.61% de la muestra recuperada (379 casillas), e
+información en los 16 estratos (distritos locales):
+
+![](reporte-2-05.png)
+
+Los cómputos distritales para los dos candidatos punteros, sin embargo resultaron en
+
+- Guillermo Anaya Llamas (alianza PAN) 36.40%
+- Miguel Riquelme Solís (alianza PRI): 38.9%
+
+**La tendencia anunciada por el conteo rápido fue inversa a los resultados, y 
+el intervalo reportado para el candidato del PRI (con error reportado de 1.2 
+puntos porcentuales) está a 1.6 puntos porcentuales del valor de cómputos distritales**.
+
+En este reporte buscamos explicar esta discrepancia. Dado el diseño, utilizaremos
+el estimador de razón combinado.
 
 ## Resumen
 
@@ -17,6 +43,7 @@ format:
 #| warning: false
 library(tidyverse)
 library(quickcountmx)
+library(DiagrammeR)
 source("../R/crear-tablas-alianzas.R")
 #remotes::install_github("cotecora-team-2/quickcountmx",
 #                        ref = "main-2022")
@@ -32,23 +59,32 @@ coah_remesa_tbl <- read_csv("../datos/COA_INFORMACION_DE_CASILLAS_REPORTADAS_Y_R
   arrange(fecha_hora) |> 
   mutate(casillas_rep = row_number()) |> 
   rename(LISTA_NOMINAL = `LISTA NOMINAL`) |> 
-  mutate(cand_1 = PRI + PVEM + PNA + PSDI + PRC + PCP + PJ + COAL1,
-         cand_2 = PAN + PUDC + PES + PPC + COAL2,
+  mutate(cand_pri = PRI + PVEM + PNA + PSDI + PRC + PCP + PJ + COAL1,
+         cand_pan = PAN + PUDC + PES + PPC + COAL2,
          cand_3 = MORENA,
          cand_4 = `GUERRERO GARCIA JAVIER`,
          cand_5 = PRD,
          cand_6 = PT,
          cand_7 = `SALINAS VALDEZ LUIS HORACIO`,
          otros = `CANDIDATO INDEPENDIENTE 1` + `VOTOS CNR` + `VOTOS NULOS`) |> 
-  mutate(total = cand_1 + cand_2 + cand_3 + cand_4 + cand_5 + cand_6 + cand_7 + otros) |> 
+  mutate(total = cand_pri + cand_pan + cand_3 + cand_4 + cand_5 + cand_6 + cand_7 + otros) |> 
   mutate(DISTRITO = as.character(DISTRITO)) |> 
   mutate(horas = difftime(fecha_hora, min(fecha_hora), units = "hours")) |> 
   mutate(horas = as.numeric(horas))
 ```
 
+## Tiempos de llegada de casillas
+
+Las tasas de llegada fueron en general bajas (menos de 15% de la muestra por hora
+en los momentos relativamente rápido), y después de las 11pm la tasa
+fue bajando considerablemente:
+
 ```{r}
 ggplot(coah_remesa_tbl, aes(x = horas, y = casillas_rep / nrow(coah_muestra_tbl))) +
-  geom_line()
+  geom_line() + geom_vline(xintercept = 7, colour = "red") +
+  xlab("Horas después de las 7pm") + ylab("Proporción de muestra recibida") +
+  annotate("text", x= 6.8, y = 0.1, label = "Último reporte", colour = "red",
+           angle = 90)
 ```
 ```{r}
 coah_muestra_tbl <- coah_muestra_tbl |>
@@ -65,113 +101,148 @@ coah_muestra_tbl <- coah_muestra_tbl |> left_join(coah_remesa_tbl |> dplyr::sele
 ## Muestra completa vs remesa
 
 ```{r}
+# Remesa con Cómputos
 estratos_coah_tbl <- coah |> count(ID_DISTRITO_LOCAL) |> 
   mutate(ID_DISTRITO_LOCAL = as.character(ID_DISTRITO_LOCAL))
 coah_muestra_tbl <- mutate(coah_muestra_tbl, ID_DISTRITO_LOCAL = as.character(ID_DISTRITO_LOCAL))
-est_remesa_coah_tbl <- ratio_estimation(coah_muestra_tbl |> filter(!is.na(horas), !is.na(cand_pan)), ID_DISTRITO_LOCAL, 
+coah_remesa_2_tbl <- coah_remesa_tbl |> 
+  filter(fecha_hora < lubridate::ymd_hm("2017-06-05 02:06"))
+est_remesa_coah_tbl <- ratio_estimation(coah_muestra_tbl |> 
+  filter(!is.na(horas), !is.na(cand_pan)) |> 
+  filter(FOLIO %in% coah_remesa_2_tbl$FOLIO), 
+  ID_DISTRITO_LOCAL, 
   estratos_coah_tbl, n_stratum = n, parties = c(cand_pri:otros, MORENA, PRD, PT)) |> 
-  mutate(tipo = "remesa")
-est_remesa_coah_tbl
+  mutate(tipo = "remesa (cómputos)")
+#est_remesa_coah_tbl
+```
+```{r}
+# Remesa con datos recibidos
+#estratos_coah_tbl <- coah |> count(ID_DISTRITO_LOCAL) |> 
+#  mutate(ID_DISTRITO_LOCAL = as.character(ID_DISTRITO_LOCAL))
+#coah_muestra_tbl <- mutate(coah_muestra_tbl, ID_DISTRITO_LOCAL = as.character(ID_DISTRITO_LOCAL))
+est_remesa_original_coah_tbl <- ratio_estimation(coah_remesa_tbl |> 
+    filter(!is.na(horas)) |> 
+    mutate(ID_DISTRITO_LOCAL = DISTRITO) |> 
+    filter(fecha_hora < lubridate::ymd_hm("2017-06-05 02:06"))
+    , 
+  ID_DISTRITO_LOCAL, 
+  estratos_coah_tbl, n_stratum = n, parties = cand_pri:otros) |> 
+  mutate(tipo = "remesa (recibida)") 
+#est_remesa_coah_tbl
+#est_remesa_original_coah_tbl
 ```
 
+
 ```{r}
+# Muestra completa con cómputos
 est_muestra_coah_tbl <- ratio_estimation(coah_muestra_tbl |> filter(!is.na(cand_pan)), ID_DISTRITO_LOCAL, 
   estratos_coah_tbl, n_stratum = n, parties = c(cand_pri:otros, MORENA, PRD, PT)) |> 
-  mutate(tipo = "muestra")
-est_muestra_coah_tbl
+  mutate(tipo = "muestra (cómputos)")
+#est_muestra_coah_tbl
 ```
+
+A continuación presentamos nuestras propias estimaciones, considerando la remesa
+de último reporte y muestra completa con cómputos distritales:
+
 
 ```{r}
 res <- tibble(party = c("cand_pri", "cand_pan", "cand_morena", "cand_4"),
-              prop_obs = c(38.90, 36.40, 11.91, 8.31))
-bind_rows(est_muestra_coah_tbl, est_remesa_coah_tbl) |> 
+              prop_obs = c(38.90, 36.40, 11.91, 8.31)) |>
+  filter(party!="cand_morena")
+bind_rows(est_muestra_coah_tbl, est_remesa_coah_tbl, est_remesa_original_coah_tbl) |> 
   filter(party %in% c("cand_pri", "cand_pan", "MORENA")) |> 
   mutate(party = ifelse(party=="MORENA", "cand_morena", party)) |> 
+  filter(party!="cand_morena") |>
   ggplot() +
-  geom_linerange(aes(x = tipo, ymin = prop - 2 * std_error,
+  geom_linerange(aes(x = party, ymin = prop - 2 * std_error,
                       ymax = prop + 2 * std_error)) + 
-  geom_point(aes(x = tipo, y = prop)) +
-  geom_hline(data = res |> filter(prop_obs > 10), aes(yintercept = prop_obs), 
-             colour = "red") +
-  facet_wrap(~ party, scales = "free_y") +
-  xlab("Muestra utilizada")
+  geom_point(aes(x = party, y = prop)) +
+  geom_point(data = res |> filter(prop_obs > 10), 
+             aes(x = party, y = prop_obs), 
+             colour = "red", size = 3) +
+  facet_wrap(~ tipo) 
 ```
-
+- La diferencia entre cómputos y datos recibidos no es causante de la discrepancia
+grande, aunque hay una ligera diferencia entre las estimaciones con remesa recibida y remesa
+usando cómputos distritales. 
+- Nuestros intervalos son algo más angostos que los reportados por el COTECORA
+Coahuila, pero esto puede ser por el tipo particular de estimador que se haya
+utilizado. 
 - La muestra completa hubiera dado la respuesta correcta, mientras
-que la remesa es inconcluyente con la tendencia incorrecta
+que la remesa es inconcluyente con la tendencia incorrecta.
 - El sesgo observado en la remesa con respecto a la muestra completa es 
 aproximadamente del mismo tamaño que el error de estimación. (un poco más
 de un punto porcentual).
 
 
+## Tendencia de las estimaciones
+
+Consideramos también cómo se ve la tendencia en el tiempo de las estimaciones:
 
 
+## Explicación de censura por tiempo
 
-
-```{r}
-ggplot(coah_remesa_tbl, aes(x = (cand_1), y = horas, group = DISTRITO)) + geom_point() +
-  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~ DISTRITO)
-lm(horas ~ log(cand_1 + cand_2) + factor(DISTRITO), coah_remesa_tbl)
-```
-
-```{r}
-ggplot(coah_remesa_tbl, aes(x = log(cand_1), y = fecha_hora, group = DISTRITO)) + geom_point() +
-  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~ DISTRITO)
-coefs_0 <- lm(horas ~ I((cand_1 + cand_2 + 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
-coefs_1 <- lm(horas ~ I((cand_1 + 1)/200)  + factor(DISTRITO), coah_remesa_tbl) |> coef()
-coefs_2 <- lm(horas ~ I((cand_2 + 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
-coefs_3 <- lm(horas ~ I((cand_3 + 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
-coefs_4 <- lm(horas ~ I((total+ 1)/200) + factor(DISTRITO), coah_remesa_tbl) |> coef()
-coefs_0[2:3]
-coefs_1[2:3]
-coefs_2[2:3]
-coefs_3[2:3]
-coefs_4[2:3]
-
-```
-
+El sesgo no proviene de fallas en el
+método de estimación (es decir, sesgo por muestra chica
+en el estimador de razón, etc.) sino de la influencia en 
+la selección de la remesa por tiempo:
 
 
 ```{r}
-ggplot(coah_remesa_tbl, aes(x = cand_3, y = fecha_hora, group = DISTRITO, colour = log(1+cand_1))) + geom_point() +
-  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~ DISTRITO)
-```
+#| code-fold: true
+grViz('
+digraph {
+  subgraph completo {
+    graph [ranksep = 0.2]
+    node [shape=circle]
+    node [shape=plaintext]
+    
+    Votos_1 [label = "Votos"]
+    Z_1 [label="Z"]
+    S_1 [label="S",fontcolor = "red"]
+    Estrato_1 [label="Estrato"]
+    edge [minlen = 3]
+    Z_1 -> S_1
+    Estrato_1 -> S_1
+    Estrato_1 -> Votos_1
+  }
 
-## Examinar patrones
 
-
-```{r}
-
-xlogx <- function(x){
-  salida <- -sum(x[x>0] * log(x[x>0]))
-  salida
+ subgraph con_tiempo {
+  graph [ranksep = 0.2]
+    node [shape=circle]
+    Dif
+    U
+    node [shape=plaintext]
+    Votos
+    S [fontcolor = "red"]
+    edge [minlen = 3]
+    Z -> S
+    Estrato -> S
+    Estrato -> Votos
+    Votos -> Dif [color="gray"]
+    Dif -> TiempoLlegada
+    U -> TiempoLlegada
+    TiempoLlegada -> S
+{rank=same; Estrato;Votos;Dif}
 }
-
-coah <- coah |> mutate(id = row_number())
-coah_largo <- coah |> select(id, PAN:CAND_IND2) |> 
-  pivot_longer(cols = PAN:CAND_IND2, names_to = "partido", values_to = "votos")
-patrones_tbl <- coah_largo |> group_by(id) |> 
-  mutate(prop = votos / sum(votos)) |> 
-  summarise(s = sum(xlogx(prop)))
-coah <- left_join(coah, patrones_tbl)
+}
+')
 ```
+
+
+
 
 ```{r}
-ggplot(coah, aes(x = s)) + geom_histogram() + facet_wrap(~ ID_DISTRITO_LOCAL)
+ggplot(coah_remesa_tbl, aes(x = (cand_pri), y = horas, group = DISTRITO)) + geom_point() +
+  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~DISTRITO, scales = "free_x", nrow = 3) 
 ```
 
-```{r}
-coah_remesa_largo <- coah_remesa_tbl  |> select(FOLIO, PAN:COAL2) |> 
-  pivot_longer(cols = PAN:COAL2, names_to = "partido", values_to = "votos")
-patrones_remesas_tbl <- coah_remesa_largo |> group_by(FOLIO) |> 
-  mutate(prop = votos / sum(votos)) |> 
-  summarise(s = sum(xlogx(prop)))
 
-coah_remesa_tbl <- coah_remesa_tbl |> left_join(patrones_remesas_tbl)
-```
 
-```{r}
-ggplot(coah_remesa_tbl, aes(x = horas, y = s)) + geom_point()  +
-  facet_wrap(~ DISTRITO) + geom_smooth(method = "lm")
-```
+
+## Muestra incompleta con censura aleatoria
+
+
+
 
