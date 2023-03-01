@@ -86,6 +86,7 @@ ggplot(coah_remesa_tbl, aes(x = horas, y = casillas_rep / nrow(coah_muestra_tbl)
   annotate("text", x= 6.8, y = 0.1, label = "Último reporte", colour = "red",
            angle = 90)
 ```
+
 ```{r}
 coah_muestra_tbl <- coah_muestra_tbl |>
   rename(ID_DISTRITO_LOCAL = DIST_LOC ) |> 
@@ -146,28 +147,41 @@ de último reporte y muestra completa con cómputos distritales:
 
 
 ```{r}
+#| fig.width: 8
+#| fig.height: 3
 res <- tibble(party = c("cand_pri", "cand_pan", "cand_morena", "cand_4"),
               prop_obs = c(38.90, 36.40, 11.91, 8.31)) |>
   filter(party!="cand_morena")
+# est_conteo_tbl <- tibble(party = c("cand_pri", "cand_pan"),
+#                      prop = c(36.051, 37.8659), 
+#                      std_error = c(0.0129, 0.0122) * 100 / 2, 
+#                      tipo = "remesa (recibida)", color = "cotecora 2017")
+# separate ratio con survey: pri 36.7, pan 37.7        
 bind_rows(est_muestra_coah_tbl, est_remesa_coah_tbl, est_remesa_original_coah_tbl) |> 
+  add_column(color = "est. propia") |> 
+  # bind_rows(est_conteo_tbl) |> 
   filter(party %in% c("cand_pri", "cand_pan", "MORENA")) |> 
   mutate(party = ifelse(party=="MORENA", "cand_morena", party)) |> 
   filter(party!="cand_morena") |>
   ggplot() +
-  geom_linerange(aes(x = party, ymin = prop - 2 * std_error,
-                      ymax = prop + 2 * std_error)) + 
-  geom_point(aes(x = party, y = prop)) +
+  geom_pointrange(aes(x = party, y = prop, ymin = prop - 2 * std_error,
+                      ymax = prop + 2 * std_error,  color = color), 
+                  position = position_dodge2(width = 0.1), fatten = 0.9, 
+                  show.legend = FALSE) + 
   geom_point(data = res |> filter(prop_obs > 10), 
              aes(x = party, y = prop_obs), 
              colour = "red", size = 3) +
-  facet_wrap(~ tipo) 
+  # geom_pointrange(data = est_conteo_tbl, aes(x = party, y = prop, ymin = prop - 2 * std_error,
+  #                     ymax = prop + 2 * std_error), color = "darkgray") +
+  facet_wrap(~ tipo) + 
+  scale_color_manual("", values = c("est.propia" = "black", "cotecora 2017" = "salmon"))
 ```
+- Para la remesa recibida, nuestros intervalos fallan de igual manera que los reportados
+ por COTECORA Coahuila, aunque los nuestros son algo más angostos. Esto puede ser por el tipo particular de estimador que se haya
+utilizado. 
 - La diferencia entre cómputos y datos recibidos no es causante de la discrepancia
 grande, aunque hay una ligera diferencia entre las estimaciones con remesa recibida y remesa
 usando cómputos distritales. 
-- Nuestros intervalos son algo más angostos que los reportados por el COTECORA
-Coahuila, pero esto puede ser por el tipo particular de estimador que se haya
-utilizado. 
 - La muestra completa hubiera dado la respuesta correcta, mientras
 que la remesa es inconcluyente con la tendencia incorrecta.
 - El sesgo observado en la remesa con respecto a la muestra completa es 
@@ -179,13 +193,45 @@ de un punto porcentual).
 
 Consideramos también cómo se ve la tendencia en el tiempo de las estimaciones:
 
+```{r}
+#| fig.width: 6
+#| fig.height: 4
+remesa_final <- coah_remesa_tbl |> 
+    filter(!is.na(horas)) |> 
+    mutate(ID_DISTRITO_LOCAL = DISTRITO) |> 
+    filter(fecha_hora < lubridate::ymd_hm("2017-06-05 02:06")) 
+
+cortes <- unique(remesa_final$fecha_hora)
+cortes <- cortes[-1]
+est_cortes <- map_df(set_names(cortes), function(corte){
+  remesa_final |> 
+    filter(fecha_hora <= corte) |> 
+    ratio_estimation(stratum = ID_DISTRITO_LOCAL, estratos_coah_tbl, 
+                 n_stratum = n, parties = cand_pri:otros, std_errors = FALSE) |> 
+    filter(party %in% c("cand_pri", "cand_pan"))
+}, .id = "fecha_hora")
+est_cortes |> 
+  mutate(fecha_hora = lubridate::ymd_hms(fecha_hora)) |> 
+  ggplot(aes(x = fecha_hora, y = prop, color = party)) +
+    geom_line() +
+  labs(title = "Estimaciones por remesa", color = "")
+
+```
+
+
 
 ## Explicación de censura por tiempo
 
 El sesgo no proviene de fallas en el
 método de estimación (es decir, sesgo por muestra chica
-en el estimador de razón, etc.) sino de la influencia en 
-la selección de la remesa por tiempo:
+en el estimador de razón, etc.), ni de discrepancias entre cómputos y remesas. El sesgo
+proviene de la influencia en 
+la selección de la remesa por tiempo. 
+
+Los diagramas de abajo describen el escenario de muestra completa (izquierda) y 
+un escenario donde el patrón de faltantes está influenciado por el patrón de votos 
+observado en las casillas (derecha) lo que rompe la aleatoriedad de la muestra
+recibida:
 
 
 ```{r}
@@ -206,6 +252,8 @@ digraph {
     Estrato_1 -> S_1
     Estrato_1 -> Votos_1
   }
+  label = "Muestra completa vs muestra censurada"
+  
 
 
  subgraph con_tiempo {
@@ -225,24 +273,37 @@ digraph {
     U -> TiempoLlegada
     TiempoLlegada -> S
 {rank=same; Estrato;Votos;Dif}
-}
+  
+ }
 }
 ')
 ```
+* En el caso de muestra completa, condicinando a estrato el proceso de selección 
+($Z \to S$) es independiente de votos.
 
+* En el caso de muestra censurada, aún condicionando a estrato, los votos están
+correlacionados con la muestra observada a través del tiempo de llegada 
+($Votos \to Dif \to TiempoLlegada \to S$).
+
+* Loes factores U que influyen en el tiempo de llegada y que no están relacionados
+al patrón de votos no rompen la aleatoriedad de la muestra.
 
 
 
 ```{r}
-ggplot(coah_remesa_tbl, aes(x = (cand_pri), y = horas, group = DISTRITO)) + geom_point() +
-  geom_smooth(method = "lm", se = FALSE) + facet_wrap(~DISTRITO, scales = "free_x", nrow = 3) 
+orden_DL <- coah_remesa_tbl |> 
+  group_split(DISTRITO, .keep = TRUE) |> 
+  map_df(~lm(data = ., "horas ~ cand_pri")$coefficients[2]) |> 
+  add_column(DISTRITO = sort(unique(coah_remesa_tbl$DISTRITO))) |> 
+  arrange(cand_pri) |> 
+  pull(DISTRITO)
+coah_remesa_tbl |> 
+  mutate(DISTRITO = factor(as.character(DISTRITO), levels = orden_DL[16:1])) |> 
+ggplot(aes(x = cand_pri, y = horas, group = DISTRITO)) + 
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE) + 
+  facet_wrap(~DISTRITO,  nrow = 3) 
 ```
-
-
-
-
-## Muestra incompleta con censura aleatoria
-
 
 
 
