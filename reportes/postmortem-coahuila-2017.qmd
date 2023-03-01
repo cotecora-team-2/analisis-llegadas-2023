@@ -45,8 +45,10 @@ library(tidyverse)
 library(quickcountmx)
 library(DiagrammeR)
 source("../R/crear-tablas-alianzas.R")
-#remotes::install_github("cotecora-team-2/quickcountmx",
-#                        ref = "main-2022")
+# remotes::install_github("cotecora-team-2/quickcountmx",
+#                        # ref = "code-improvements")
+
+
 ```
 
 
@@ -185,7 +187,7 @@ usando cómputos distritales.
 - La muestra completa hubiera dado la respuesta correcta, mientras
 que la remesa es inconcluyente con la tendencia incorrecta.
 - El sesgo observado en la remesa con respecto a la muestra completa es 
-aproximadamente del mismo tamaño que el error de estimación. (un poco más
+aproximadamente del mismo tamaño que el error de estimación (un poco más
 de un punto porcentual).
 
 
@@ -278,14 +280,14 @@ digraph {
 }
 ')
 ```
-* En el caso de muestra completa, condicinando a estrato el proceso de selección 
-($Z \to S$) es independiente de votos.
+* En el caso de muestra completa, condicinando a estrato, el proceso de selección 
+(Z $\to$ S) es independiente de votos.
 
 * En el caso de muestra censurada, aún condicionando a estrato, los votos están
-correlacionados con la muestra observada a través del tiempo de llegada 
-($Votos \to Dif \to TiempoLlegada \to S$).
+correlacionados con la muestra observada a través del tiempo de llegada \
+(Votos $\to$ Dif $\to$ TiempoLlegada $\to$ S).
 
-* Loes factores U que influyen en el tiempo de llegada y que no están relacionados
+* Los factores U que influyen en el tiempo de llegada y que no están relacionados
 al patrón de votos no rompen la aleatoriedad de la muestra.
 
 
@@ -304,6 +306,6 @@ ggplot(aes(x = cand_pri, y = horas, group = DISTRITO)) +
   geom_smooth(method = "lm", se = FALSE) + 
   facet_wrap(~DISTRITO,  nrow = 3) 
 ```
-
+* En la mayor parte de los distritos observamos una relación positiva entre el número de votos por el candidato del PRI y la hora de llegada de la casilla a la muestra. Nuestra hipótesis es que esto se debe al gran número de combinaciones posibles que había para votar por dicho candidato.  
 
 
