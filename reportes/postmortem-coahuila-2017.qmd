@@ -7,6 +7,7 @@ format:
   html:
     embed-resources: true
 ---
+Teresa Ortiz, Felipe González, Michelle Anzarut
 
 ## Descripción
 
@@ -34,8 +35,6 @@ puntos porcentuales) está a 1.6 puntos porcentuales del valor de cómputos dist
 
 En este reporte buscamos explicar esta discrepancia. Dado el diseño, utilizaremos
 el estimador de razón combinado.
-
-## Resumen
 
 ```{r}
 #| code-fold: true
@@ -78,7 +77,7 @@ coah_remesa_tbl <- read_csv("../datos/COA_INFORMACION_DE_CASILLAS_REPORTADAS_Y_R
 ## Tiempos de llegada de casillas
 
 Las tasas de llegada fueron en general bajas (menos de 15% de la muestra por hora
-en los momentos relativamente rápido), y después de las 11pm la tasa
+en los momentos relativamente rápidos), y después de las 11pm la tasa
 fue bajando considerablemente:
 
 ```{r}
@@ -309,3 +308,14 @@ ggplot(aes(x = cand_pri, y = horas, group = DISTRITO)) +
 * En la mayor parte de los distritos observamos una relación positiva entre el número de votos por el candidato del PRI y la hora de llegada de la casilla a la muestra. Nuestra hipótesis es que esto se debe al gran número de combinaciones posibles que había para votar por dicho candidato.  
 
 
+## Resumen
+
+* No hay razón para pensar que muestras más grandes resuelven el problema del 
+sesgo si el porcentaje de casillas observadas es relativamente bajo (por ejemplo, menor  que 70%). No se puede **garantizar** que en una nueva elección el sesgo será ignorable.
+
+* Con muestras relativamente grandes, como la que se seleccionó en este conteo, 
+si el porcentaje de casillas es bajo los errores de estimación reportados están gravemente
+sesgados hacia abajo. En este ejemplo particular el sesgo es mayor que el error reportado.
+
+* Sí hay razones por las que muestras más grandes pueden producir retrasos adicionales
+y menor calidad de datos (presión a CAEs, seguimiento de reportes).
