@@ -1,0 +1,73 @@
+---
+title: "Simulación muestras censuradas"
+format: html
+---
+
+```{r}
+library(quickcountmx)
+#| message: false
+source("../R/simular-censuradas/procesar.R")
+source("../R/simular-censuradas/aux_survival.R")
+source("../R/simular-censuradas/ajustar_modelo.R")
+```
+
+```{r, echo = FALSE, fig.width=4, fig.height=2.4}
+set.seed(188324)
+datos_sim <- map(1:100, ~ simular_cuantiles(.x, llegadas_filtrado_tbl, reg = reg_2)) 
+gg_obs <- ggsurvplot(survfit(Surv(tiempo_huso, status) ~ state_abbr, llegadas_filtrado_tbl))
+datos_obs <- gg_obs$data.survplot %>% mutate(id = 101)
+datos_check <- bind_rows(datos_obs, datos_sim) #%>% 
+  #mutate(strata = str_sub(strata, 12, 30))
+ggplot(datos_check %>% filter(id!=101), aes(x = time, y = surv, group = id)) +
+  geom_hline(yintercept = 0.50, colour = "gray") +
+  geom_step( alpha = 0.3, colour = "gray") +
+  geom_step(data = datos_check %>% filter(id==101), colour = "red") +
+  facet_wrap(~ strata) + 
+  ylab("% Censurado") + xlab("Horas después de hora de cierre de casillas")
+```
+
+
+
+```{r}
+estados
+tam_muestra <- c(450, 700)
+num_casillas <- map_dbl(lista_computos, nrow)
+prop_azar <- c(0.2, 0.2)
+frac_muestreo <- tam_muestra / num_casillas
+frac_muestreo
+```
+
+
+```{r, echo=FALSE}
+set.seed(221)
+muestras_lst <- map(1:2, function(i){
+  computos <- lista_computos[[i]] |> 
+    mutate(id_casilla = row_number()) |> 
+    select(id_casilla, everything())
+  estado_abbr <- estados[i]
+  write_csv(computos |> select(!c(contains("cand_", ignore.case = FALSE), starts_with("total_std"))), 
+            paste0("./muestras/marco-", tolower(estado_abbr), "-2017.csv"))
+  frac <- frac_muestreo[i]
+  p_azar <- prop_azar[i]
+  print(estado_abbr)
+  muestras_edo_tbl <- map_df(1:150, function(rep){
+    muestra_pred <- prep_muestra_orden(computos, llegadas_filtrado_tbl, frac = frac, 
+                                       prop_azar = p_azar, estado_abbr = estado_abbr)
+    cortes <- floor(nrow(muestra_pred) * c(0.50, 0.75, 0.90, 1))
+    muestras_censuradas_tbl <- map_df(cortes, function(corte_selec){
+      muestra_censurada <- muestra_pred |> filter(tiempo <= corte_selec)
+      muestra_censurada$corte <- round(100 * corte_selec / nrow(muestra_pred))
+      muestra_censurada$num_muestra <- rep
+      muestra_censurada |> select(-c(cand_1:cand_3, cand_1_std:tiempo))
+      })
+    muestras_censuradas_tbl
+  })
+  muestras_edo_tbl
+})
+```
+```{r}
+nombres <- paste0("muestras/local-muestras-censuradas-", tolower(estados) ,".csv")
+walk(1:2, function(i){
+  write_csv(muestras_lst[[i]], nombres[i])
+})
+```
