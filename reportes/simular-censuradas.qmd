@@ -45,12 +45,17 @@ muestras_lst <- map(1:2, function(i){
     mutate(id_casilla = row_number()) |> 
     select(id_casilla, everything())
   estado_abbr <- estados[i]
-  write_csv(computos |> select(!c(contains("cand_", ignore.case = FALSE), starts_with("total_std"))), 
-            paste0("./muestras/marco-", tolower(estado_abbr), "-2017.csv"))
+  write_csv(computos |> 
+    select(!c(contains("cand_", ignore.case = FALSE), starts_with("total_std"))) |>
+        relocate(c(CAND_0:CAND_5, NUM_VOTOS_CAN_NREG, NUM_VOTOS_VALIDOS,
+                   NUM_VOTOS_NULOS, TOTAL_VOTOS, LISTA_NOMINAL), 
+                 .after = num_casilla), 
+            paste0("./muestras/marco-", tolower(estado_abbr), "-2017.csv")
+  )
   frac <- frac_muestreo[i]
   p_azar <- prop_azar[i]
   print(estado_abbr)
-  muestras_edo_tbl <- map_df(1:150, function(rep){
+  muestras_edo_tbl <- map_df(1:100, function(rep){
     muestra_pred <- prep_muestra_orden(computos, llegadas_filtrado_tbl, frac = frac, 
                                        prop_azar = p_azar, estado_abbr = estado_abbr)
     cortes <- floor(nrow(muestra_pred) * c(0.50, 0.75, 0.90, 1))
@@ -58,7 +63,11 @@ muestras_lst <- map(1:2, function(i){
       muestra_censurada <- muestra_pred |> filter(tiempo <= corte_selec)
       muestra_censurada$corte <- round(100 * corte_selec / nrow(muestra_pred))
       muestra_censurada$num_muestra <- rep
-      muestra_censurada |> select(-c(cand_1:cand_3, cand_1_std:tiempo))
+      muestra_censurada |> 
+        select(-c(cand_1:cand_3, cand_1_std:tiempo, num_casilla)) |> 
+        relocate(c(CAND_0:CAND_5, NUM_VOTOS_CAN_NREG, NUM_VOTOS_VALIDOS,
+                   NUM_VOTOS_NULOS, TOTAL_VOTOS, LISTA_NOMINAL), 
+                 .after = num_muestra)
       })
     muestras_censuradas_tbl
   })

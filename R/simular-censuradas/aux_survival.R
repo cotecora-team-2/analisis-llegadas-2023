@@ -80,6 +80,9 @@ prep_muestra_orden <- function(computos, llegadas_filtrado_tbl, frac = 0.15, pro
   tiempos <- simular_cuantiles(1, llegadas_filtrado_tbl, muestra_pred, reg = reg_2,
                                solo_tiempos = TRUE, horas_censura = 100, permutar = TRUE, prop_azar = prop_azar) |>
     pull(tiempo)
+  ##### TODO: agregar huso para municipios de Coahuila
+  #
+  #####
   muestra_pred$tiempo <- rank(tiempos, ties.method = "random")
   muestra_pred <- arrange(muestra_pred, tiempo)
   muestra_pred
