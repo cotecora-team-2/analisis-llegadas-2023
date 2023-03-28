@@ -1,0 +1,60 @@
+---
+title: "Prueba de muestras - estimador de razón"
+format: html
+---
+
+```{r}
+#| warning: false
+#| message: false
+library(tidyverse)
+library(quickcountmx)
+muestras_coah_tbl <- read_csv("./salidas/resultados_coah.csv")
+muestras_mex_tbl <- read_csv("./salidas/resultados_mex.csv")
+marco_coah_tbl <- read_csv("./muestras/marco-coah-2017.csv")
+marco_mex_tbl <- read_csv("./muestras/marco-mex-2017.csv")
+
+```
+
+```{r}
+estratos_mex_tbl <- marco_mex_tbl |> 
+  group_by(ID_DTTO_LOCAL_Ago2022) |> 
+  count()
+res_mex_tbl <- ratio_estimation(marco_mex_tbl, 
+  stratum = ID_DTTO_LOCAL_Ago2022, data_stratum = estratos_mex_tbl, 
+  n_stratum = n, parties = c(CAND_0:CAND_5, NUM_VOTOS_CAN_NREG, NUM_VOTOS_NULOS), B = 1) |> 
+  filter(party != "part") |> 
+  rename(candidato = party)
+estratos_coah_tbl <- marco_coah_tbl |> 
+  group_by(ID_DTTO_LOCAL_Ago2022) |> 
+  count()
+res_coah_tbl <- ratio_estimation(marco_coah_tbl, 
+  stratum = ID_DTTO_LOCAL_Ago2022, data_stratum = estratos_coah_tbl, 
+  n_stratum = n, parties = c(CAND_0:CAND_5, NUM_VOTOS_CAN_NREG, NUM_VOTOS_NULOS), B = 1) |> 
+  filter(party != "part") |> 
+  rename(candidato = party)
+res_mex_tbl
+res_coah_tbl
+```
+
+
+```{r}
+muestras_mex_tbl <- muestras_mex_tbl |> filter(candidato != "PART") |> 
+  left_join(res_mex_tbl)
+muestras_mex_tbl |> mutate(cubre = prop < LS & prop > LI) |> 
+  group_by(corte, candidato) |> 
+  summarise(cobertura = mean(cubre)) |> 
+ggplot(aes(x = corte, y = cobertura)) + 
+  geom_point() + facet_wrap(~candidato)
+```
+
+```{r}
+muestras_coah_tbl <- muestras_coah_tbl |> filter(candidato != "PART") |> 
+  left_join(res_coah_tbl)
+muestras_coah_tbl |> mutate(cubre = prop < LS & prop > LI) |> 
+  group_by(corte, candidato) |> 
+  summarise(cobertura = mean(cubre)) |> 
+ggplot(aes(x = corte, y = cobertura)) + 
+  geom_point() + facet_wrap(~candidato)
+
+```
+
