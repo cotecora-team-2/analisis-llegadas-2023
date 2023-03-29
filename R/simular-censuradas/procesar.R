@@ -7,7 +7,8 @@ library(broom)
 alianzas_tbl <- read_csv("../datos/coaliciones-2017.csv")
 
 computos_mex_tbl <- read_delim("../datos/Gob_2023_MEX.txt", delim = "|", 
-  escape_double = FALSE, trim_ws = TRUE) |> 
+  escape_double = FALSE, trim_ws = TRUE, 
+  locale = locale(encoding = "windows-1252")) |> 
   mutate(num_casilla = row_number())
 
 mex_votos_tbl <- computos_mex_tbl |> 
@@ -26,7 +27,8 @@ computos_mex_tbl <- computos_mex_tbl |>
 
 # coah
 computos_coah_tbl <- read_delim("../datos/Gob_2023_COAH.txt", 
-  delim = "|", escape_double = FALSE, trim_ws = TRUE) |> 
+  delim = "|", escape_double = FALSE, trim_ws = TRUE, 
+  locale = locale(encoding = "windows-1252")) |> 
   mutate(num_casilla = row_number())
 coah_votos_tbl <- computos_coah_tbl |> 
   pivot_longer(cols = PAN:CAND_IND1, names_to = "PARTIDO", values_to = "votos") |> 

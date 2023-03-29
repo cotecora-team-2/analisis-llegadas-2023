@@ -1,4 +1,4 @@
-
+husos_coah_tbl <- read_csv("../datos/coah_cambio_horario.csv")
 
 simular_cuantiles <- function(id, datos, datos_nuevos = NULL, reg, horas_censura = 5,
                               solo_tiempos = FALSE, permutar = FALSE, prop_azar = 0.3){
@@ -76,13 +76,19 @@ prep_muestra_orden <- function(computos, llegadas_filtrado_tbl, frac = 0.15, pro
       tipo_seccion = ifelse(TIPO_SECC_Ago2022 == "U", 1, 2),
       tipo_seccion = ifelse(TIPO_SECC_Ago2022 == "R", 3, tipo_seccion),
       tipo_seccion = ifelse(is.na(TIPO_SECC_Ago2022), 1, tipo_seccion),
-      tipo_casilla = str_sub(CASILLA, 1, 1))
+      tipo_casilla = str_sub(CASILLA, 1, 1)) 
+  if(estado_abbr == "COAH"){
+    muestra_pred <- muestra_pred |> 
+      left_join(husos_coah_tbl, by = "MUNICIPIO_Ago2022") |> 
+      mutate(cambio_horario = ifelse(is.na(cambio_horario), 0, cambio_horario))}
+  else {
+    muestra_pred$cambio_horario <- 0
+  }
   tiempos <- simular_cuantiles(1, llegadas_filtrado_tbl, muestra_pred, reg = reg_2,
-                               solo_tiempos = TRUE, horas_censura = 100, permutar = TRUE, prop_azar = prop_azar) |>
+    solo_tiempos = TRUE, horas_censura = 100, permutar = TRUE, prop_azar = prop_azar) |>
     pull(tiempo)
-  ##### TODO: agregar huso para municipios de Coahuila
-  #
-  #####
+  ##### 
+  tiempos <- tiempos - muestra_pred$cambio_horario
   muestra_pred$tiempo <- rank(tiempos, ties.method = "random")
   muestra_pred <- arrange(muestra_pred, tiempo)
   muestra_pred
