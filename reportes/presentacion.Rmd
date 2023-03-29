@@ -75,7 +75,7 @@ El modelo permite producir muestras con horas de llegada, es decir, podemos eval
 
 ## Ajuste de huso horario
 
-Supondremos que el tiempo de llegada de las casillas de los 10 municipios de Coahuila con horario estacional es 1 hora anterior al que simulamos con el modelo de tiempos de llegadas.
+Supondremos que el tiempo de llegada de las casillas de los 11 municipios de Coahuila con horario estacional es 1 hora anterior al que simulamos con el modelo de tiempos de llegadas.
 
 ## Ejemplo
 
