@@ -1,0 +1,129 @@
+---
+title: "Simulación de muestras censuradas (elecciones estatales 2023)"
+author: "T. Ortiz, F. González, M. Anzarut"
+date: '2023-03-28'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(quickcountmx)
+#| message: false
+source("../R/simular-censuradas/procesar.R")
+source("../R/simular-censuradas/aux_survival.R")
+source("../R/simular-censuradas/ajustar_modelo.R")
+```
+
+
+
+### Objetivo y resumen
+
+El objetivo principal es presentar una posibilidad para simular muestras según
+los diseños seleccionados, con y sin censura
+por tiempo, para evaluar el desempeño de distintos métodos de agregación de estimaciones. Estas muestras
+deben cumplir:
+
+1. Las poblaciones de las que se extraen las muestras deben ser obtenidas de otras elecciones, o 
+ser similares a poblaciones observadas con anterioridad *en aquellos aspectos que puedan
+afectar las garantías inferenciales que fueron planteadas*. 
+Dado que esta última determinación
+es difícil de hacer, proponemos utilizar datos de elecciones anteriores.
+
+2. Las muestras deben incluir versiones censuradas por tiempo (por ejemplo, 50%, 75% y 90% de la muestra total), utilizando mecanismos de censura que no sean ignorables. 
+Estos mecanismos pueden inferirse, al
+menos parcialmente, del comportamiento de tiempos de llegada de información de conteos rápidos anteriores.
+Este método resulta en patrones de censura que pueden ocurrir en elecciones futuras. 
+
+  Una segunda estrategia es construir mecanismos de censura hipotéticos y no basados en datos anteriores necesariamente. El riesgo en este caso es que probemos escenarios poco realistas que son 
+demasiado fáciles (censura totalmente al azar) o demasiado difíciles (probabilidad de estratos faltantes
+por completo asociada a porcentajes de votos reportados).
+
+3. Los municipios de Coahuila con horario estacional son aquellos que conforman la región norte del estado, en total son 11 municipios de Coahuila que tienen una hora de diferencia de horario con los otros 27 municipios. 
+
+  Las casillas en estos municipios podrían llegar antes a la muestra dado que cerrarán antes y podrían tener distintos patrones de votación que el resto del estado. Ésta situación induciría *sesgo* adicional en las estimaciones con muestras parciales. 
+
+  Consideramos que vale la pena hacer pruebas con ésta diferencia de horario al simular el tiempo de llegadas de las casillas a la muestra. 
+
+
+## Modelo de tiempos de llegadas
+
+* Necesitamos un procedimiento para generar muestras parciales con patrones aproximados a los que se ven en días electorales. Por lo tanto, modelamos el tiempo de llegada de las casillas a la base de datos.
+
+* Utilizamos modelos de supervivencia paramétricos, censurados por la derecha para las casillas que no llegaron antes de las 00:00 horas (estratificados por estado y asumimos una distribución log-logística para los tiempos de llegada). 
+
+* Algunas de las covariables utilizadas en el modelo son el tipo de sección (urbana o rural), el tipo de casilla (básica, contigua, especial o extraordinaria), la lista nominal, y el porcentaje de votos obtenidos por los 3 principales candidatos de 2018. Adicionalmente, utilizamos un índice de marginación, construido con el primer componente principal de las variables de equipamiento y servicios de vivienda de INEGI.
+
+* Usamos los votos obtenidos por los 3 principales candidatos para mejorar el ajuste. Hacemos esto porque el resto de las variables por sí solas no parecen explicar bien el patrón de tiempos de llegada. Esto no es un problema, ya que el modelo no se utiliza con fines predictivos. 
+
+* Podemos verificar en la siguiente gráfica el ajuste para cada estado. 
+
+```{r, echo = FALSE, fig.width=4, fig.height=2.4}
+set.seed(188324)
+datos_sim <- map(1:100, ~ simular_cuantiles(.x, llegadas_filtrado_tbl, reg = reg_2)) 
+gg_obs <- ggsurvplot(survfit(Surv(tiempo_huso, status) ~ state_abbr, llegadas_filtrado_tbl))
+datos_obs <- gg_obs$data.survplot %>% mutate(id = 101)
+datos_check <- bind_rows(datos_obs, datos_sim) #%>% 
+  #mutate(strata = str_sub(strata, 12, 30))
+ggplot(datos_check %>% filter(id!=101), aes(x = time, y = surv, group = id)) +
+  geom_hline(yintercept = 0.50, colour = "gray") +
+  geom_step( alpha = 0.3, colour = "gray") +
+  geom_step(data = datos_check %>% filter(id==101), colour = "red") +
+  facet_wrap(~ strata) + 
+  ylab("% Censurado") + xlab("Horas después de hora de cierre de casillas")
+```
+
+El modelo permite producir muestras con horas de llegada, es decir, podemos evaluar los modelos con muestras parciales, tomando diferentes niveles de censura para entender qué tan lejos puede estar la cobertura real de intervalos de su cobertura nominal.
+
+## Ajuste de huso horario
+
+Supondremos que el tiempo de llegada de las casillas de los 10 municipios de Coahuila con horario estacional es 1 hora anterior al que simulamos con el modelo de tiempos de llegadas.
+
+## Ejemplo
+
+Producimos 100 muestras para Coahuila y 100 muestras para Estado de México y tomamos los siguientes porcentajes de censura: 50%, 75%, 90%, 100%. 
+
+```{r, echo = FALSE, include = FALSE}
+resultados_coah_tbl <- read_csv("./salidas/resultados_coah.csv")
+resultados_mex_tbl <- read_csv("./salidas/resultados_mex.csv") 
+resultados <- list(resultados_coah_tbl, resultados_mex_tbl)
+```
+
+Podemos utilizar nuestro estimador de razón para evaluar éstas muestras y ver en qué porcentaje de veces el intervalo contiene el verdadero valor. 
+
+```{r, echo = FALSE, include = FALSE}
+computos_res <- map(lista_computos, function(computos){
+  estratos_tbl <- computos |> 
+    count(ID_DTTO_LOCAL_Ago2022) 
+  computos <- computos |>
+    mutate(OTROS = NUM_VOTOS_CAN_NREG + NUM_VOTOS_NULOS)
+   total_obs <- ratio_estimation(computos ,
+                                  stratum = ID_DTTO_LOCAL_Ago2022,
+                                  data_stratum = estratos_tbl,
+                                  n_stratum = n, 
+                  parties = c(CAND_0:CAND_5, OTROS),
+                  std_errors = FALSE)
+   total_obs$ID_ESTADO <- first(computos$ID_ESTADO)
+   total_obs$NOMBRE_ESTADO <- first(computos$NOMBRE_ESTADO)
+   total_obs |> rename(candidato = party) |> 
+     rename(prop_computos = prop) |> 
+     mutate(candidato = ifelse(candidato == "part", "PART", candidato))
+   }) |> bind_rows() 
+```
+
+```{r, echo = FALSE, include = FALSE}
+tabla_estados <- tibble(ID_ESTADO = c(5, 15), NOMBRE_ESTADO = c("COAHUILA", "MEXICO"), estado = c("COAH", "MEX"))
+coberturas <- bind_rows(resultados) |>
+  left_join(tabla_estados) |>
+  left_join(computos_res)
+coberturas_tbl <- coberturas |> 
+  mutate(cubre = prop_computos >= LI & prop_computos <= LS) |> 
+  group_by(estado, corte, candidato) |> 
+  summarise(cobertura = mean(cubre))  
+```
+
+```{r, echo = FALSE}
+ggplot(coberturas_tbl, aes(x = corte, y = cobertura, colour = candidato)) +
+  geom_line() + geom_point() +
+  facet_wrap(~ estado)
+```
+
+

@@ -8,11 +8,51 @@ format: html
 #| message: false
 library(tidyverse)
 library(quickcountmx)
-muestras_coah_tbl <- read_csv("./salidas/resultados_coah.csv")
-muestras_mex_tbl <- read_csv("./salidas/resultados_mex.csv")
-marco_coah_tbl <- read_csv("./muestras/marco-coah-2017.csv")
-marco_mex_tbl <- read_csv("./muestras/marco-mex-2017.csv")
+# muestras_coah_tbl <- read_csv("./salidas/resultados_coah.csv")
+# muestras_mex_tbl <- read_csv("./salidas/resultados_mex.csv")
+estados <- c("COAH", "MEX")
+muestras_coah_tbl <- read_csv("muestras/local-muestras-censuradas-coah.csv")
+muestras_mex_tbl <- read_csv("muestras/local-muestras-censuradas-mex.csv")
+muestras_lst <- list(muestras_coah_tbl, muestras_mex_tbl)
+```
 
+```{r}
+resultados <- map(1:2, function(i){
+  nombre_marco <- paste0("muestras/marco-", tolower(estados)[i], "-2017.csv")
+  marco <-read_csv(nombre_marco) |> 
+    mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022))
+  estratos_tbl <- marco |> count(ID_DTTO_LOCAL_Ago2022)
+  id_estado <- marco$ID_ESTADO |> first()
+  muestras <- muestras_lst[[i]]
+  estimaciones <- map_df(1:5
+                         , function(rep){
+    map_df(c(50, 75, 90, 100), function(corte_s){
+      muestra <- muestras |> filter(num_muestra == rep & corte == corte_s) |> 
+        mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022))
+      est_razon <- ratio_estimation(muestra, stratum = ID_DTTO_LOCAL_Ago2022, 
+                                  data_stratum = estratos_tbl, 
+                                  n_stratum = n, 
+                                  parties = all_of(c(num_range("CAND_", 0:100))), 
+                                  B = 50
+                                  )
+    est_razon$estado <- tolower(estados)[i]
+    est_razon$num_muestra <- rep
+    est_razon$corte <- corte_s
+    est_razon <- est_razon |> 
+      mutate(LI = prop - 2 * std_error,
+             LS = prop + 2 * std_error) |> 
+      rename(candidato = party) |> 
+      mutate(candidato = ifelse(candidato == "part", "PART", candidato))
+    est_razon
+  })
+  })
+  estimaciones |> select(estado, num_muestra, corte, candidato, LI, LS)
+})
+```
+```{r}
+walk(1:2, function(i){
+  write_csv(resultados[[i]], paste0("muestras/resultados_", resultados[[i]]$estado[1], ".csv"))
+}
 ```
 
 ```{r}
