@@ -48,6 +48,8 @@ por completo asociada a porcentajes de votos reportados).
 
 * Necesitamos un procedimiento para generar muestras parciales con patrones aproximados a los que se ven en días electorales. Por lo tanto, modelamos el tiempo de llegada de las casillas a la base de datos en las elecciones presidenciales del 2018.
 
+* Se utilizan las elecciones nacionales del 2018, pues las elecciones estatales del 2017 fueron organizadas localmente, los resultados pueden ser diferentes y los datos tienen formatos diferentes. Adicionalmente, el caso de Coahuila 2017 es muy extremo en cuánto a censura de llegada de casillas a la muestra como discutimos anteriormente.
+
 * Utilizamos modelos de supervivencia paramétricos, censurados por la derecha para las casillas que no llegaron antes de las 00:00 horas (estratificados por estado y asumimos una distribución log-logística para los tiempos de llegada). 
 
 * Algunas de las covariables utilizadas en el modelo son el tipo de sección (urbana o rural), el tipo de casilla (básica, contigua, especial o extraordinaria), la lista nominal, y el porcentaje de votos obtenidos por los 3 principales candidatos de 2018. Adicionalmente, utilizamos un índice de marginación, construido con el primer componente principal de las variables de equipamiento y servicios de vivienda de INEGI.
@@ -77,9 +79,21 @@ El modelo permite producir muestras con horas de llegada, es decir, podemos eval
 
 Supondremos que el tiempo de llegada de las casillas de los 11 municipios de Coahuila con horario estacional es 1 hora anterior al que simulamos con el modelo de tiempos de llegadas.
 
-## Ejemplo
+## Archivos de muestras para pruebas
 
 Producimos 100 muestras para Coahuila y 100 muestras para Estado de México y tomamos los siguientes porcentajes de censura: 50%, 75%, 90%, 100%. 
+
+1. El formato es el mismo que el de los cómputos distritales 2017 de cada estado. El marco que
+se usa es el mismo (quitando aquellas casillas que no tienen distrito en ID_DTTO_LOCAL_Ago2022 o
+tienen NA en votos nulos). Las muestras son de 450 casillas para Coahuila y 700 para el estado de México y se utiliza la estratificación dada por ID_DTTO_LOCAL_Ago2022. 
+2. Hay dos variables adicionales: num_muestra (1 a 100) y corte (50, 75, 90, 100)
+3. Necesitamos estimaciones de intervalos para cada num_muestra y para cada corte.
+4. Subiremos a Dropbox las muestras, los marcos y un ejemplo de salida en formato csv.
+
+
+## Ejemplo
+
+Utilizamos nuestro estimador de razón para evaluar éstas muestras. Estimamos CAND_0,...,CAND,5, OTROS y PART, donde OTROS es la suma de NUM_VOTOS_CAN_NREG y NUM_VOTOS_NULOS (podemos hacer caso omiso a las coaliciones).
 
 ```{r, echo = FALSE, include = FALSE}
 resultados_coah_tbl <- read_csv("./salidas/resultados_coah.csv")
@@ -87,7 +101,15 @@ resultados_mex_tbl <- read_csv("./salidas/resultados_mex.csv")
 resultados <- list(resultados_coah_tbl, resultados_mex_tbl)
 ```
 
-Podemos utilizar nuestro estimador de razón para evaluar éstas muestras y ver en qué porcentaje de veces el intervalo contiene el verdadero valor. 
+```{r}
+resultados_coah_tbl 
+```
+
+```{r}
+resultados_mex_tbl 
+```
+
+A continuación analizamos las coberturas obtenidas, es decir, el porcentaje de veces en que el intervalo contiene el verdadero valor. 
 
 ```{r, echo = FALSE, include = FALSE}
 computos_res <- map(lista_computos, function(computos){
