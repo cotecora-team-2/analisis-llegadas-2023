@@ -46,7 +46,7 @@ por completo asociada a porcentajes de votos reportados).
 
 ## Modelo de tiempos de llegadas
 
-* Necesitamos un procedimiento para generar muestras parciales con patrones aproximados a los que se ven en días electorales. Por lo tanto, modelamos el tiempo de llegada de las casillas a la base de datos.
+* Necesitamos un procedimiento para generar muestras parciales con patrones aproximados a los que se ven en días electorales. Por lo tanto, modelamos el tiempo de llegada de las casillas a la base de datos en las elecciones presidenciales del 2018.
 
 * Utilizamos modelos de supervivencia paramétricos, censurados por la derecha para las casillas que no llegaron antes de las 00:00 horas (estratificados por estado y asumimos una distribución log-logística para los tiempos de llegada). 
 
