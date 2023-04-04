@@ -52,7 +52,7 @@ por completo asociada a porcentajes de votos reportados).
 
 * Utilizamos modelos de supervivencia paramétricos, censurados por la derecha para las casillas que no llegaron antes de las 00:00 horas (estratificados por estado y asumimos una distribución log-logística para los tiempos de llegada). 
 
-* Algunas de las covariables utilizadas en el modelo son el tipo de sección (urbana o rural), el tipo de casilla (básica, contigua, especial o extraordinaria), la lista nominal, y el porcentaje de votos obtenidos por los 3 principales candidatos de 2018. Adicionalmente, utilizamos un índice de marginación, construido con el primer componente principal de las variables de equipamiento y servicios de vivienda de INEGI.
+* Algunas de las covariables utilizadas en el modelo son el tipo de sección (urbana o rural), el tipo de casilla (básica, contigua, especial o extraordinaria), la lista nominal, y el porcentaje de votos obtenidos por los 3 principales candidatos de 2018. 
 
 * Usamos los votos obtenidos por los 3 principales candidatos para mejorar el ajuste. Hacemos esto porque el resto de las variables por sí solas no parecen explicar bien el patrón de tiempos de llegada. Esto no es un problema, ya que el modelo no se utiliza con fines predictivos. 
 
@@ -112,34 +112,32 @@ resultados_mex_tbl
 A continuación analizamos las coberturas obtenidas, es decir, el porcentaje de veces en que el intervalo contiene el verdadero valor. 
 
 ```{r, echo = FALSE, include = FALSE}
-computos_res <- map(lista_computos, function(computos){
-  estratos_tbl <- computos |> 
-    count(ID_DTTO_LOCAL_Ago2022) 
-  computos <- computos |>
-    mutate(OTROS = NUM_VOTOS_CAN_NREG + NUM_VOTOS_NULOS)
-   total_obs <- ratio_estimation(computos ,
+evaluacion <- map(1:2, function(i){
+  nombre_marco <- paste0("muestras/marco-", tolower(estados)[i], "-2017.csv")
+  marco <-read_csv(nombre_marco) |> 
+    mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022))
+  estratos_tbl <- marco |> count(ID_DTTO_LOCAL_Ago2022)
+  total_obs <- ratio_estimation(marco ,
                                   stratum = ID_DTTO_LOCAL_Ago2022,
                                   data_stratum = estratos_tbl,
                                   n_stratum = n, 
                   parties = c(CAND_0:CAND_5, OTROS),
                   std_errors = FALSE)
-   total_obs$ID_ESTADO <- first(computos$ID_ESTADO)
-   total_obs$NOMBRE_ESTADO <- first(computos$NOMBRE_ESTADO)
-   total_obs |> rename(candidato = party) |> 
-     rename(prop_computos = prop) |> 
-     mutate(candidato = ifelse(candidato == "part", "PART", candidato))
-   }) |> bind_rows() 
+  total_obs$ID_ESTADO <- first(marco$ID_ESTADO)
+  total_obs$estado <- estados[i]
+  total_obs |> rename(candidato = party) |> 
+    rename(prop_computos = prop) |> 
+    mutate(candidato = ifelse(candidato == "part", "PART", candidato))  
+}) |> bind_rows() 
+```
 ```
 
 ```{r, echo = FALSE, include = FALSE}
-tabla_estados <- tibble(ID_ESTADO = c(5, 15), NOMBRE_ESTADO = c("COAHUILA", "MEXICO"), estado = c("COAH", "MEX"))
-coberturas <- bind_rows(resultados) |>
-  left_join(tabla_estados) |>
-  left_join(computos_res)
-coberturas_tbl <- coberturas |> 
+coberturas_tbl <- bind_rows(resultados) |>
+  left_join(evaluacion) |>
   mutate(cubre = prop_computos >= LI & prop_computos <= LS) |> 
   group_by(estado, corte, candidato) |> 
-  summarise(cobertura = mean(cubre))  
+  summarise(cobertura = mean(cubre)) 
 ```
 
 ```{r, echo = FALSE}
