@@ -5,16 +5,95 @@ format: html
 
 ```{r}
 library(quickcountmx)
-#| message: false
-source("../R/simular-censuradas/procesar.R")
-source("../R/simular-censuradas/aux_survival.R")
-source("../R/simular-censuradas/ajustar_modelo.R")
+library(tidyverse)
+estados <- c("COAH", "MEX")
 ```
 
 ```{r}
 muestras_coah_tbl <- read_csv("muestras/local-muestras-censuradas-coah.csv")
 muestras_mex_tbl <- read_csv("muestras/local-muestras-censuradas-mex.csv")
 muestras_lst <- list(muestras_coah_tbl, muestras_mex_tbl)
+```
+
+```{r}
+num_estratos <- map(1:2, function(i){
+   muestras <- muestras_lst[[i]]
+   muestras |>
+    group_by(corte, num_muestra) |>
+    count(ID_DTTO_LOCAL_Ago2022) |> 
+    count(n>0) |>
+    summarize(n, .groups = "drop") |>
+    group_by(corte) |>
+    count(n) |>
+    ungroup() |>
+    rename(num_estratos = n, num_muestras = nn) |>
+    mutate(estado = tolower(estados)[i])
+}) |> bind_rows()    
+```
+
+```{r}
+verificaciones_muestras <- map(1:2, function(i){
+  print(estados[i])
+   muestras <- muestras_lst[[i]]
+   errores_na <- muestras |>  
+     select(CAND_0:CAND_5, OTROS, ID_DTTO_FEDERAL_Ago2022, TOTAL) |>
+     is.na() |> colSums()
+   if(sum(errores_na) > 0){
+     print("NAs encontrados")
+     print(errores_na)}
+   errores_total <- muestras |>
+     mutate(errores_1 = (CAND_0 + CAND_1 +CAND_2 +CAND_3 +CAND_4 + CAND_5 + OTROS - TOTAL)>0) |>
+     mutate(errores_2 = LISTA_NOMINAL < TOTAL) |>
+     filter(errores_1 | errores_2) |>
+     select(id_casilla, TOTAL, LISTA_NOMINAL) 
+   if(nrow(errores_total) > 0){
+     print("Errores en total encontrados")
+     print(errores_total)}
+  errores_nulos <- muestras |>
+     filter(corte == 100) |>
+     mutate(errores = NUM_VOTOS_NULOS > 60) |>
+     filter(errores) |>
+     select(id_casilla, NUM_VOTOS_NULOS) |>
+     unique()
+   if(nrow(errores_nulos) > 0){
+     print("Casillas con más de 60 nulos")
+     print(errores_nulos)}
+   muestras |>
+    group_by(corte, num_muestra) |>
+    summarize(tamaño = length(id_casilla), .groups = "drop") |>
+    count(tamaño) |>
+    mutate(estado = tolower(estados)[i])  
+}) |> bind_rows()    
+```
+
+```{r}
+verificaciones_marcos <- map(1:2, function(i){
+  print(estados[i])
+  nombre_marco <- paste0("muestras/marco-", tolower(estados)[i], "-2017.csv")
+  marco <-read_csv(nombre_marco)
+   errores_na <- marco |>  
+     select(CAND_0:CAND_5, OTROS, ID_DTTO_FEDERAL_Ago2022, TOTAL) |>
+     is.na() |> colSums()
+   if(sum(errores_na) > 0){
+     print("NAs encontrados")
+     print(errores_na)}
+   errores_total <- marco |>
+     mutate(errores_1 = (CAND_0 + CAND_1 +CAND_2 +CAND_3 +CAND_4 + CAND_5 + OTROS - TOTAL)>0) |>
+     mutate(errores_2 = LISTA_NOMINAL < TOTAL) |>
+     filter(errores_1 | errores_2) |>
+     select(id_casilla, TOTAL, LISTA_NOMINAL) 
+   if(nrow(errores_total) > 0){
+     print("Errores en total encontrados")
+     print(errores_total)}
+  errores_nulos <- marco |>
+     mutate(errores = NUM_VOTOS_NULOS > 60) |>
+     filter(errores) |>
+     select(id_casilla, NUM_VOTOS_NULOS) |>
+     unique()
+   if(nrow(errores_nulos) > 0){
+     print("Casillas con más de 60 nulos")
+     print(errores_nulos)}
+})    
 ```
 
 ```{r}
@@ -28,13 +107,12 @@ resultados <- map(1:2, function(i){
   estimaciones <- map_df(1:100, function(rep){
     map_df(c(50, 75, 90, 100), function(corte_s){
       muestra <- muestras |> filter(num_muestra == rep & corte == corte_s) |> 
-        mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022)) |> 
-        mutate(OTROS = NUM_VOTOS_CAN_NREG + NUM_VOTOS_NULOS)
+        mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022)) 
       est_razon <- ratio_estimation(muestra, stratum = ID_DTTO_LOCAL_Ago2022, 
                                   data_stratum = estratos_tbl, 
                                   n_stratum = n, 
                                   parties = c(CAND_0:CAND_5, OTROS), 
-                                  B = 70
+                                  B = 50
                                   )
     est_razon$estado <- estados[i]
     est_razon$ID_ESTADO <- id_estado
@@ -55,38 +133,35 @@ write_csv(resultados[[2]], paste0("salidas/resultados_", resultados[[2]]$estado[
 ```
 
 ```{r}
-computos_res <- map(lista_computos, function(computos){
-  estratos_tbl <- computos |> 
-    count(ID_DTTO_LOCAL_Ago2022) 
-  computos <- computos |>
-    mutate(OTROS = NUM_VOTOS_CAN_NREG + NUM_VOTOS_NULOS)
-   total_obs <- ratio_estimation(computos ,
+evaluacion <- map(1:2, function(i){
+  nombre_marco <- paste0("muestras/marco-", tolower(estados)[i], "-2017.csv")
+  marco <-read_csv(nombre_marco) |> 
+    mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022))
+  estratos_tbl <- marco |> count(ID_DTTO_LOCAL_Ago2022)
+  total_obs <- ratio_estimation(marco ,
                                   stratum = ID_DTTO_LOCAL_Ago2022,
                                   data_stratum = estratos_tbl,
                                   n_stratum = n, 
                   parties = c(CAND_0:CAND_5, OTROS),
                   std_errors = FALSE)
-   total_obs$ID_ESTADO <- first(computos$ID_ESTADO)
-   total_obs$NOMBRE_ESTADO <- first(computos$NOMBRE_ESTADO)
-   total_obs |> rename(candidato = party) |> 
-     rename(prop_computos = prop) |> 
-     mutate(candidato = ifelse(candidato == "part", "PART", candidato))
-   }) |> bind_rows() 
+  total_obs$ID_ESTADO <- first(marco$ID_ESTADO)
+  total_obs$estado <- estados[i]
+  total_obs |> rename(candidato = party) |> 
+    rename(prop_computos = prop) |> 
+    mutate(candidato = ifelse(candidato == "part", "PART", candidato))  
+}) |> bind_rows() 
 ```
 
 ```{r}
-tabla_estados <- tibble(ID_ESTADO = c(5, 15), NOMBRE_ESTADO = c("COAHUILA", "MEXICO"), estado = c("COAH", "MEX"))
 coberturas <- bind_rows(resultados) |>
-  left_join(tabla_estados) |>
-  left_join(computos_res)
-```
-
-```{r}
-coberturas |> 
+  left_join(evaluacion) |>
   mutate(cubre = prop_computos >= LI & prop_computos <= LS) |> 
   group_by(estado, corte, candidato) |> 
-  summarise(cobertura = mean(cubre)) |> 
-ggplot(aes(x = corte, y = cobertura, colour = candidato)) +
+  summarise(cobertura = mean(cubre)) 
+```
+
+```{r}
+coberturas |> ggplot(aes(x = corte, y = cobertura, colour = candidato)) +
   geom_line() + geom_point() +
   facet_wrap(~ estado)
 ```

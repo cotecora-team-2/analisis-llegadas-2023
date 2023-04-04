@@ -49,9 +49,10 @@ computos_coah_tbl <- computos_coah_tbl |>
 lista_computos <-
   list(computos_coah_tbl, computos_mex_tbl)
 
-# quitar casillas sin ID_DTTO_2021
-#lista_computos <- map(lista_computos, ~ filter(.x, !is.na(ID_DTTO_LOCAL_Nov2021)))
-#lista_computos <- map(lista_computos, ~ filter(.x, !is.na(VOTOS_NULOS) ))
+#quitar casillas sin ID_DTTO_2022
+lista_computos <- map(lista_computos, ~ filter(.x, !is.na(ID_DTTO_LOCAL_Ago2022)))
+lista_computos <- map(lista_computos, ~ filter(.x, !is.na(NUM_VOTOS_NULOS)))
+lista_computos <- map(lista_computos, ~ filter(.x, NUM_VOTOS_NULOS < 100))
 
 map_df(lista_computos, function(computos){
    computos |> group_by(ID_ESTADO) |>

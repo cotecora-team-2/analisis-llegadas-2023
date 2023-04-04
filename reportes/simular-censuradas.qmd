@@ -45,14 +45,15 @@ muestras_lst <- map(1:2, function(i){
     mutate(id_casilla = row_number()) |> 
     select(id_casilla, everything())
   estado_abbr <- estados[i]
-  write_csv(computos |> 
-    select(!c(contains("cand_", ignore.case = FALSE), starts_with("total_std"))) |>
-        relocate(c(CAND_0:CAND_5, NUM_VOTOS_CAN_NREG, NUM_VOTOS_VALIDOS,
-                   NUM_VOTOS_NULOS, TOTAL_VOTOS, LISTA_NOMINAL), 
-                 .after = num_casilla), 
-            paste0("./muestras/marco-", tolower(estado_abbr), "-2017.csv")
-  )
-  frac <- frac_muestreo[i]
+  computos <- computos |> 
+    mutate(OTROS = NUM_VOTOS_CAN_NREG + NUM_VOTOS_NULOS)  |>
+    mutate(TOTAL = CAND_0 + CAND_1 + CAND_2 + CAND_3 + CAND_4 + CAND_5 + OTROS) |>
+    filter(LISTA_NOMINAL >= TOTAL) |>
+    relocate(c(CAND_0:CAND_5, OTROS, TOTAL, LISTA_NOMINAL), .after = num_casilla)
+  write_csv(computos |>
+          select(!c(contains("cand_", ignore.case = FALSE), starts_with("total_std"))) ,
+      paste0("./muestras/marco-", tolower(estado_abbr), "-2017.csv"))
+  frac <- tam_muestra[i]/nrow(computos)
   p_azar <- prop_azar[i]
   print(estado_abbr)
   muestras_edo_tbl <- map_df(1:100, function(rep){
@@ -65,8 +66,7 @@ muestras_lst <- map(1:2, function(i){
       muestra_censurada$num_muestra <- rep
       muestra_censurada |> 
         select(-c(cand_1:cand_3, cand_1_std:tiempo, num_casilla)) |> 
-        relocate(c(CAND_0:CAND_5, NUM_VOTOS_CAN_NREG, NUM_VOTOS_VALIDOS,
-                   NUM_VOTOS_NULOS, TOTAL_VOTOS, LISTA_NOMINAL), 
+        relocate(c(CAND_0:CAND_5, OTROS, TOTAL, LISTA_NOMINAL), 
                  .after = num_muestra)
       })
     muestras_censuradas_tbl
