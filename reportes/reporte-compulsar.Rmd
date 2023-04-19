@@ -1,0 +1,295 @@
+---
+title: "Pruebas de intervalos para elecciones estatales 2017"
+author: "T. Ortiz, F. González, M. Anzarut"
+date: "19/04/2023"
+output: html_document
+---
+
+### Objetivos del reporte {-}
+
+En este reporte examinamos el desempeño de distintos métodos 
+para producir intervalos de estimación para 
+muestras del elecciones estatales, buscamos verificar cobertura 
+y ancho de intervalos bajo distintos niveles de censura (50, 75, 90).
+
+## Resumen de conclusiones {-}
+ 
+
+
+1. Bajo censura, los métodos tienen caídas en su cobertura real vs. la nominal. El tamaño de la caída es diferente para cada método. 
+
+2. Bajo censura, utilizando la unión de los cuatro métodos podemos alcanzar cobertura
+por arriba del 95% en los dos estados.
+
+3. La precisión de la unión de los intervalos es comparable en cada caso con el intervalo más ancho de los cuatro métodos individuales.
+
+4. Con muestra completa, los tres métodos probados 
+se desempeñan favorablemente en términos de cobertura y la precisón al estimar candidatos es similar.
+
+5. La precisión del intervalo de participación varía por método. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+library(tidyverse)
+library(ggthemes)
+library(quickcountmx)
+old <- theme_set(theme_bw())
+ggthemes_data$colorblind  <- ggthemes_data$colorblind |> 
+  filter(name != "Yellow" & name!= "Blue" & name!= "Reddish Purple")
+colores_val <- ggthemes_data$colorblind$value
+library(gt)
+estados <- c("COAH", "MEX")
+```
+
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+# Leer resultados
+nombres <- c("Ortiz", "Rodriguez", "Romero")
+resultados_csv <- map(nombres, \(nom){
+  archivos_resultados <- list.files(paste0("salidas/", nom), full.names = TRUE)
+  resultados_csv <- map(archivos_resultados, read_csv) |> bind_rows()
+}) 
+names(resultados_csv) <- nombres
+resultados_tbl <- bind_rows(resultados_csv, .id = "nombre") 
+union_tbl <- resultados_tbl |> 
+  group_by(estado, num_muestra, corte, candidato) |> 
+  summarise(LI = min(LI), LS = max(LS), .groups = "drop") |> 
+  mutate(nombre = "Unión")
+median_tbl <- resultados_tbl |> 
+  group_by(estado, num_muestra, corte, candidato) |> 
+  summarise(LI = median(LI), LS = median(LS), .groups = "drop") |> 
+  mutate(nombre = "Mediana")
+resultados_tbl <- resultados_tbl |> 
+  bind_rows(union_tbl) |> 
+  bind_rows(median_tbl) |>
+  mutate(nombre = fct_relevel(nombre, levels = c(nombres, "Unión", "Mediana"))) 
+```
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resultados_finales <- map(1:2, function(i){
+  nombre_marco <- paste0("muestras/marco-", tolower(estados)[i], "-2017.csv")
+  marco <-read_csv(nombre_marco) |> 
+    mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022))
+  estratos_tbl <- marco |> count(ID_DTTO_LOCAL_Ago2022)
+  total_obs <- ratio_estimation(marco ,
+                                  stratum = ID_DTTO_LOCAL_Ago2022,
+                                  data_stratum = estratos_tbl,
+                                  n_stratum = n, 
+                  parties = c(CAND_0:CAND_5, OTROS),
+                  std_errors = FALSE)
+  total_obs$ID_ESTADO <- first(marco$ID_ESTADO)
+  total_obs$estado <- estados[i]
+  total_obs |> rename(candidato = party) |> 
+    rename(prop_computos = prop) |> 
+    mutate(candidato = ifelse(candidato == "part", "PART", candidato))  
+}) |> bind_rows() 
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resumen_tamano_tbl <- resultados_tbl |> 
+  group_by(candidato, nombre, estado, corte) |> 
+  summarise(error = mean(LS - LI) / 2, .groups = "drop") |> 
+  arrange(candidato, nombre, estado) 
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resumen_cobertura_tbl <- resultados_tbl |> 
+  left_join(resultados_finales) |> 
+  mutate(cubre = prop_computos <= LS & prop_computos >= LI) |> 
+  group_by(candidato, corte, nombre, estado) |> 
+  summarise(cobertura = mean(cubre), .groups = "drop") 
+```
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resumen_ecm_tbl <- resultados_tbl |> 
+  left_join(resultados_finales) |> 
+  mutate(est_media = LI + (LS-LI)/2) |>
+  mutate(rcm = (est_media - prop_computos)^2) |> 
+  group_by(candidato, corte, nombre, estado) |> 
+  summarise(rcm = sqrt(mean(rcm)), .groups = "drop")
+```
+
+## Muestras  incompletas
+
+Analizaremos principalmente el escenario de muestras incompletas que es el que se presentará el día de la elección. 
+
+```{r, echo = FALSE}
+ggplot(resumen_tamano_tbl |> filter(corte != 100, candidato != "PART", candidato != "OTROS")) +
+  geom_point(aes(x = corte, y = error, colour = candidato)) +
+  geom_line(aes(x = corte, y = error, colour = candidato)) +
+  facet_grid(estado ~ nombre, scales = "free_y")  +
+  geom_hline(yintercept = 1.5) +
+  labs(subtitle = "Media de las precisiones") 
+```
+
+
+```{r, echo = FALSE}
+ggplot(resumen_cobertura_tbl  |> filter(corte != 100, candidato != "PART", candidato != "OTROS"),
+       aes(x = corte, y = cobertura, colour = candidato, group = candidato)) +
+  geom_rect(ymin = 0.90, ymax = 1, xmin = -Inf, xmax = Inf, colour = NA, fill = "gray89") +
+  geom_point() +
+  geom_jitter(width = 0.0, height = 0) +
+  geom_line() +
+  facet_grid(estado~nombre) +
+  ylim(c(0.5, 1)) +
+  labs(subtitle = "Coberturas") 
+```
+
+```{r, echo = FALSE}
+# ggplot(resumen_ecm_tbl  |> filter(corte != 100, candidato != "PART", candidato != "OTROS"),
+#        aes(x = nombre, y = rcm, colour = candidato, group = candidato)) +
+#   geom_point() +
+#   geom_jitter(width = 0.0, height = 0) +
+#   geom_line() +
+#   facet_grid(estado~corte) +
+#   labs(subtitle = "ECM") 
+```
+
+
+
+**Recomendación**
+
+Sugerimos utilizar la unión de los intervalos de los cuatro métodos para producir compulsados. 
+
+<br>
+
+Veamos qué pasa en el caso de la participación
+
+* Media de las precisiones de los intervalos de participación
+
+```{r, echo = FALSE}
+resumen_tamano_tbl |> filter(corte != 100, candidato=="PART") |>
+  select(-candidato) |>
+  mutate(error = round(error, 2)) |>
+  pivot_wider(names_from = nombre, values_from = error) |> gt()
+```
+
+* Cobertura para la participación
+
+```{r, echo = FALSE}
+resumen_cobertura_tbl |> filter(corte != 100, candidato=="PART") |>
+  select(-candidato) |>
+  pivot_wider(names_from = nombre, values_from = cobertura) |> 
+  relocate(corte, .before = Ortiz) |> gt()
+
+# ggplot(resumen_cobertura_tbl |> filter(corte != 100, candidato  == "PART"),
+#        aes(x = corte, y = cobertura, colour = nombre, group = nombre)) +
+#   geom_rect(ymin = 0.90, ymax = 1, xmin = -Inf, xmax = Inf, colour = NA, fill = "gray89") +
+#   geom_point() +
+#   geom_jitter(width = 0.0, height = 0) +
+#   geom_line() +
+#   facet_wrap("estado") +
+#   ylim(c(0.8, 1))
+```
+
+
+**Discusión**
+
+Podemos utilizar la unión, aunque los intervalos de la unión son considerablemente más grandes que los que se obtendrían con la mediana y las coberturas con la mediana son buenas.
+
+<br>
+
+#### Suplementos {-}
+
+### 1. Muestra completa
+
+Como medida de precaución verificamos que las estimaciones funcionen bien con la muestra completa
+
+```{r, echo = FALSE}
+ggplot(resumen_tamano_tbl |> filter(corte == 100, candidato!="PART", candidato != "OTROS")) +
+  geom_point(aes(x = nombre, y = error, colour = candidato)) +
+  facet_wrap("estado") +
+  geom_hline(yintercept = 1.5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(subtitle = "Media de las precisiones") 
+```
+
+
+```{r, echo = FALSE}
+ggplot(resumen_cobertura_tbl |> filter(corte == 100, candidato != "PART", candidato != "OTROS"), 
+       aes(x = nombre, y = cobertura, colour = candidato, group = candidato)) +
+  geom_rect(ymin = 0.90, ymax = 1, xmin = -Inf, xmax = Inf, colour = NA, fill = "gray89") +
+  geom_point() +
+  geom_jitter(width = 0.0, height = 0) + 
+  geom_line() + 
+  facet_wrap("estado") +
+  # geom_hline(yintercept = 0.95) +
+  ylim(c(0.8, 1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(subtitle = "Coberturas") 
+```
+
+Los tres métodos estadísticos se complementan para que la unión presente coberturas cercanas al 95% en todos los escenarios evaluados.
+
+* Media de las precisiones de los intervalos de participación
+
+```{r, echo = FALSE}
+resumen_tamano_tbl |> filter(corte == 100, candidato=="PART") |>
+  select(-candidato, -corte) |>
+  mutate(error = round(error, 2)) |>
+  pivot_wider(names_from = nombre, values_from = error) |> gt()
+```
+
+* Cobertura de la participación
+
+```{r, echo = FALSE}
+resumen_cobertura_tbl |> filter(corte == 100, candidato=="PART") |>
+  select(-candidato, -corte) |>
+  pivot_wider(names_from = nombre, values_from = cobertura) |> gt()
+```
+
+### 2. Gráficas de algunos intervalos
+
+```{r, echo = FALSE}
+ggplot(resultados_tbl |>
+      left_join(resultados_finales) |>
+      filter(corte == 100, candidato %in% c("CAND_0", "CAND_1", "PART"), estado == "COAH") ,
+    aes(x = num_muestra, y = prop_computos, colour = candidato, fill = candidato)) +
+  geom_line() +
+  geom_hline(aes(yintercept = prop_computos)) +
+  geom_segment(aes(x = num_muestra, y = LI, xend = num_muestra, yend = LS), alpha =0.7, linewidth = 0.4) +
+  facet_grid(~nombre) +
+  labs(subtitle = "COAH: intervalos con 90% de muestra") 
+```
+
+```{r, echo = FALSE}
+ggplot(resultados_tbl |>
+      left_join(resultados_finales) |>
+      filter(corte == 100, candidato %in% c("CAND_1", "CAND_4", "PART"), estado == "MEX") ,
+    aes(x = num_muestra, y = prop_computos, colour = candidato, fill = candidato)) +
+  geom_line() +
+  geom_hline(aes(yintercept = prop_computos)) +
+  geom_segment(aes(x = num_muestra, y = LI, xend = num_muestra, yend = LS), alpha =0.7, linewidth = 0.4) +
+  facet_grid(~nombre) +
+  labs(subtitle = "MEX: intervalos 90% de muestra") 
+```
+
+```{r, echo = FALSE}
+ggplot(resultados_tbl |>
+      left_join(resultados_finales) |>
+      filter(corte == 50, candidato %in% c("CAND_1"), estado == "COAH") ,
+    aes(x = num_muestra, y = prop_computos)) +
+  geom_line() +
+  geom_hline(aes(yintercept = prop_computos)) +
+  geom_segment(aes(x = num_muestra, y = LI, xend = num_muestra, yend = LS), 
+               alpha =0.7, linewidth = 0.3, col = "salmon1") +
+  facet_grid(~nombre) +
+  labs(subtitle = "COAH: intervalos con 50% de muestra, CAND_1") 
+```
+
+```{r, echo = FALSE}
+# ggplot(resultados_tbl |>
+#       left_join(resultados_finales) |>
+#       filter(corte == 50, candidato %in% c("CAND_1"), estado == "MEX") ,
+#     aes(x = num_muestra, y = prop_computos)) +
+#   geom_line() +
+#   geom_hline(aes(yintercept = prop_computos)) +
+#   geom_segment(aes(x = num_muestra, y = LI, xend = num_muestra, yend = LS), 
+#                alpha =0.7, linewidth = 0.3, col = "salmon1") +
+#   facet_grid(~nombre) +
+#   labs(subtitle = "MEX: intervalos con 50% de muestra, CAND_1")
+```
