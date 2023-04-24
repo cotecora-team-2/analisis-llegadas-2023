@@ -16,17 +16,18 @@ y ancho de intervalos bajo distintos niveles de censura (50, 75, 90).
  
 
 
-1. Bajo censura, los métodos tienen caídas en su cobertura real vs. la nominal. El tamaño de la caída es diferente para cada método. 
+1. Bajo censura, los métodos de estimación tienen caídas en su cobertura real respecto a la nominal. El tamaño de la caída es diferente para cada método. 
 
-2. Bajo censura, utilizando la unión de los cuatro métodos podemos alcanzar cobertura
+2. Bajo censura, utilizando la unión de los tres métodos de estimación podemos alcanzar cobertura
 por arriba del 95% en los dos estados.
 
 3. La precisión de la unión de los intervalos es comparable en cada caso con el intervalo más ancho de los cuatro métodos individuales.
 
-4. Con muestra completa, los tres métodos probados 
-se desempeñan favorablemente en términos de cobertura y la precisón al estimar candidatos es similar.
+4. Con muestra completa, los tres métodos de estimación analizados 
+se desempeñan favorablemente en términos de cobertura y el margen de error en las
+estimaciones de los candidatos es simular.
 
-5. La precisión del intervalo de participación varía por método. 
+5. La longitud del intervalo de participación varía por método. 
 
 
 ```{r setup, include=FALSE}
@@ -117,17 +118,17 @@ resumen_ecm_tbl <- resultados_tbl |>
 
 Analizaremos principalmente el escenario de muestras incompletas que es el que se presentará el día de la elección. 
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, fig.height=4.5}
 ggplot(resumen_tamano_tbl |> filter(corte != 100, candidato != "PART", candidato != "OTROS")) +
   geom_point(aes(x = corte, y = error, colour = candidato)) +
   geom_line(aes(x = corte, y = error, colour = candidato)) +
   facet_grid(estado ~ nombre, scales = "free_y")  +
   geom_hline(yintercept = 1.5) +
-  labs(subtitle = "Media de las precisiones") 
+  labs(subtitle = "Margen de error (promedio)") 
 ```
 
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, fig.height=4.5}
 ggplot(resumen_cobertura_tbl  |> filter(corte != 100, candidato != "PART", candidato != "OTROS"),
        aes(x = corte, y = cobertura, colour = candidato, group = candidato)) +
   geom_rect(ymin = 0.90, ymax = 1, xmin = -Inf, xmax = Inf, colour = NA, fill = "gray89") +
@@ -149,8 +150,6 @@ ggplot(resumen_cobertura_tbl  |> filter(corte != 100, candidato != "PART", candi
 #   labs(subtitle = "ECM") 
 ```
 
-
-
 **Recomendación**
 
 Sugerimos utilizar la unión de los intervalos de los cuatro métodos para producir compulsados. 
@@ -159,7 +158,7 @@ Sugerimos utilizar la unión de los intervalos de los cuatro métodos para produ
 
 Veamos qué pasa en el caso de la participación
 
-* Media de las precisiones de los intervalos de participación
+* Margen de error promedio de los intervalos de participación
 
 ```{r, echo = FALSE}
 resumen_tamano_tbl |> filter(corte != 100, candidato=="PART") |>
@@ -174,6 +173,7 @@ resumen_tamano_tbl |> filter(corte != 100, candidato=="PART") |>
 resumen_cobertura_tbl |> filter(corte != 100, candidato=="PART") |>
   select(-candidato) |>
   pivot_wider(names_from = nombre, values_from = cobertura) |> 
+  arrange(estado) |> 
   relocate(corte, .before = Ortiz) |> gt()
 
 # ggplot(resumen_cobertura_tbl |> filter(corte != 100, candidato  == "PART"),
@@ -199,17 +199,17 @@ Podemos utilizar la unión, aunque los intervalos de la unión son considerablem
 
 Como medida de precaución verificamos que las estimaciones funcionen bien con la muestra completa
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, fig.height=3.5}
 ggplot(resumen_tamano_tbl |> filter(corte == 100, candidato!="PART", candidato != "OTROS")) +
   geom_point(aes(x = nombre, y = error, colour = candidato)) +
   facet_wrap("estado") +
   geom_hline(yintercept = 1.5) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(subtitle = "Media de las precisiones") 
+  labs(subtitle = "Margen de error promedio") 
 ```
 
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, fig.height=3.5}
 ggplot(resumen_cobertura_tbl |> filter(corte == 100, candidato != "PART", candidato != "OTROS"), 
        aes(x = nombre, y = cobertura, colour = candidato, group = candidato)) +
   geom_rect(ymin = 0.90, ymax = 1, xmin = -Inf, xmax = Inf, colour = NA, fill = "gray89") +
@@ -225,7 +225,7 @@ ggplot(resumen_cobertura_tbl |> filter(corte == 100, candidato != "PART", candid
 
 Los tres métodos estadísticos se complementan para que la unión presente coberturas cercanas al 95% en todos los escenarios evaluados.
 
-* Media de las precisiones de los intervalos de participación
+* Margen de error promedio de los intervalos de participación
 
 ```{r, echo = FALSE}
 resumen_tamano_tbl |> filter(corte == 100, candidato=="PART") |>
@@ -244,7 +244,7 @@ resumen_cobertura_tbl |> filter(corte == 100, candidato=="PART") |>
 
 ### 2. Gráficas de algunos intervalos
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, fig.height=3.2, fig.width=7.5}
 ggplot(resultados_tbl |>
       left_join(resultados_finales) |>
       filter(corte == 100, candidato %in% c("CAND_0", "CAND_1", "PART"), estado == "COAH") ,
@@ -256,7 +256,7 @@ ggplot(resultados_tbl |>
   labs(subtitle = "COAH: intervalos con 90% de muestra") 
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, fig.height=3.2, fig.width=7.5}
 ggplot(resultados_tbl |>
       left_join(resultados_finales) |>
       filter(corte == 100, candidato %in% c("CAND_1", "CAND_4", "PART"), estado == "MEX") ,
@@ -268,7 +268,7 @@ ggplot(resultados_tbl |>
   labs(subtitle = "MEX: intervalos 90% de muestra") 
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, eval=FALSE, fig.height=3.2, fig.width=6.2}
 ggplot(resultados_tbl |>
       left_join(resultados_finales) |>
       filter(corte == 50, candidato %in% c("CAND_1"), estado == "COAH") ,
