@@ -1,0 +1,158 @@
+---
+title: "Integración de intervalos"
+author: "T. Ortiz, F. González, M. Anzarut"
+output: word_document
+---
+
+Se examinó el desempeño de distintos métodos para integrar los tres intervalos de estimación. El análisis se hizo simulando 100 muestras de los cómputos distritales para las elecciones estatales para gobernador del 2017 de los dos estados en cuestión. Las pruebas se realizaron con las 100 muestras en tres escenarios de censura, cuando han llegado 50% de las casillas en muestra, 75% de las casillas y 90% de las casillas.
+
+Las muestras que no han recibido todas las casillas se denominan muestras censuradas. Para llevar a cabo nuestro análisis, fue crucial desarrollar un método para generar muestras censuradas que se asemejen al proceso real de generación de datos. Para ello, ajustamos un modelo de supervivencia para los tiempos de llegada de las casillas en las elecciones federales de 2018. Este modelo fue utilizado para simular muestras con tiempos de llegada y posteriormente censurarlas.
+
+Dado que los intervalos producidos en el conteo rápido son de al menos 95% de confianza, el objetivo es buscar la mejor forma de integrar las tres estimaciones individuales verificando que el valor real esté contenido en la integración de los intervalos aproximadamente 95% de las veces. Adicionalmente, se verificó también que el ancho de la integración de los intervalos sea razonable.
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+library(tidyverse)
+library(ggthemes)
+library(quickcountmx)
+old <- theme_set(theme_bw())
+ggthemes_data$colorblind  <- ggthemes_data$colorblind |> 
+  filter(name != "Yellow" & name!= "Blue" & name!= "Reddish Purple")
+colores_val <- ggthemes_data$colorblind$value
+library(gt)
+estados <- c("COAH", "MEX")
+```
+
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+# Leer resultados
+nombres <- c("Ortiz", "Rodriguez", "Romero")
+resultados_csv <- map(nombres, \(nom){
+  archivos_resultados <- list.files(paste0("salidas/", nom), full.names = TRUE)
+  resultados_csv <- map(archivos_resultados, read_csv) |> bind_rows()
+}) 
+names(resultados_csv) <- nombres
+resultados_tbl <- bind_rows(resultados_csv, .id = "nombre") 
+union_tbl <- resultados_tbl |> 
+  group_by(estado, num_muestra, corte, candidato) |> 
+  summarise(LI = min(LI), LS = max(LS), .groups = "drop") |> 
+  mutate(nombre = "Unión")
+median_tbl <- resultados_tbl |> 
+  group_by(estado, num_muestra, corte, candidato) |> 
+  summarise(LI = median(LI), LS = median(LS), .groups = "drop") |> 
+  mutate(nombre = "Mediana")
+resultados_tbl <- resultados_tbl |> 
+  bind_rows(union_tbl) |> 
+  bind_rows(median_tbl) |>
+  mutate(nombre = fct_relevel(nombre, nombres, "Unión", "Mediana"))
+```
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resultados_finales <- map(1:2, function(i){
+  nombre_marco <- paste0("muestras/marco-", tolower(estados)[i], "-2017.csv")
+  marco <-read_csv(nombre_marco) |> 
+    mutate(ID_DTTO_LOCAL_Ago2022 = as.character(ID_DTTO_LOCAL_Ago2022))
+  estratos_tbl <- marco |> count(ID_DTTO_LOCAL_Ago2022)
+  total_obs <- ratio_estimation(marco ,
+                                  stratum = ID_DTTO_LOCAL_Ago2022,
+                                  data_stratum = estratos_tbl,
+                                  n_stratum = n, 
+                  parties = c(CAND_0:CAND_5, OTROS),
+                  std_errors = FALSE)
+  total_obs$ID_ESTADO <- first(marco$ID_ESTADO)
+  total_obs$estado <- estados[i]
+  total_obs |> rename(candidato = party) |> 
+    rename(prop_computos = prop) |> 
+    mutate(candidato = ifelse(candidato == "part", "PART", candidato))  
+}) |> bind_rows() 
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resumen_tamano_tbl <- resultados_tbl |> 
+  group_by(candidato, nombre, estado, corte) |> 
+  summarise(error = mean(LS - LI) / 2, .groups = "drop") |> 
+  arrange(candidato, nombre, estado) 
+```
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resumen_cobertura_tbl <- resultados_tbl |> 
+  left_join(resultados_finales) |> 
+  mutate(cubre = prop_computos <= LS & prop_computos >= LI) |> 
+  group_by(candidato, corte, nombre, estado) |> 
+  summarise(cobertura = mean(cubre), .groups = "drop") 
+```
+
+
+```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
+resumen_ecm_tbl <- resultados_tbl |> 
+  left_join(resultados_finales) |> 
+  mutate(est_media = LI + (LS-LI)/2) |>
+  mutate(rcm = (est_media - prop_computos)^2) |> 
+  group_by(candidato, corte, nombre, estado) |> 
+  summarise(rcm = sqrt(mean(rcm)), .groups = "drop")
+```
+
+
+A continuación aparece una gráfica con el porcentaje promedio de veces que el valor real cae en el intervalo (a lo que se le conoce como cobertura) para los distintos porcentajes de muestra recibida. Tenemos las coberturas para los tres métodos de estimación individuales, para la mediana y para la unión. 
+
+```{r, echo = FALSE,  fig.width = 8}
+ggplot(resumen_cobertura_tbl  |> filter(corte != 100, candidato != "PART", candidato != "OTROS"),
+       aes(x = corte, y = cobertura, colour = candidato, group = candidato)) +
+  geom_rect(ymin = 0.90, ymax = 1, xmin = -Inf, xmax = Inf, colour = NA, fill = "gray89") +
+  geom_point() +
+  geom_jitter(width = 0.0, height = 0) +
+  geom_line() +
+  facet_grid(estado~nombre) +
+  ylim(c(0.5, 1)) +
+  labs(subtitle = "Coberturas") 
+```
+
+
+
+Podemos observar que, bajo censura, los métodos individuales tienen caídas en la cobertura, sin embargo, la unión de intervalos está por arriba de la cobertura estipulada (95%) en todos los escenarios. 
+
+Queremos verificar también la precisión de los intervalos integrados. A continuación aparece la precisión promedio para los distintos porcentajes de muestra recibida, para los tres métodos de estimación individuales, para la mediana y para la unión. 
+
+```{r, echo = FALSE,  fig.width = 8}
+ggplot(resumen_tamano_tbl |> filter(corte != 100, candidato != "PART", candidato != "OTROS")) +
+  geom_point(aes(x = corte, y = error, colour = candidato)) +
+  geom_line(aes(x = corte, y = error, colour = candidato)) +
+  facet_grid(estado ~ nombre, scales = "free_y")  +
+  geom_hline(yintercept = 1.5) +
+  labs(subtitle = "Media de las precisiones") 
+```
+
+La precisión de la unión de los intervalos es comparable en cada caso con el intervalo más ancho de los tres métodos individuales. Así pues, se decide utilizar la unión para integrar las estimaciones de votación para cada candidato. 
+
+El caso de la participación ciudadana se analiza a continuación. La siguiente tabla muestra las coberturas promedio para la participación. 
+
+```{r, echo = FALSE,  fig.width = 3}
+resumen_cobertura_tbl |> filter(corte != 100, candidato=="PART") |>
+  select(-candidato) |>
+  pivot_wider(names_from = nombre, values_from = cobertura) |> 
+  relocate(corte, .before = Ortiz) |> gt()
+```
+
+Notamos que la mediana basta para tener coberturas mayores al 95\%. Más aún, analizando la siguiente tabla de precisiones promedio,
+
+
+```{r, echo = FALSE,  fig.width = 3}
+resumen_tamano_tbl |> filter(corte != 100, candidato=="PART") |>
+  select(-candidato) |>
+  mutate(error = round(error, 2)) |>
+  pivot_wider(names_from = nombre, values_from = error) |> gt()
+```
+
+observamos que la mediana produce intervalos considerablemente más angostos que la unión, por lo que se decide utilizar la mediana para integrar el intervalo de participación. 
+
+## Conclusiones {-}
+ 
+En el caso de los votos de los candidatos, se empleará la unión para integrar los intervalos, lo que nos permitirá lograr una cobertura superior al 95% en ambos estados. Además, la precisión obtenida mediante la unión de los intervalos es comparable a la del intervalo más amplio de los cuatro métodos individuales.
+
+En cuanto a la participación ciudadana, utilizaremos la mediana para integrar los tres intervalos, lo que nos permitirá obtener coberturas superiores al 95% e intervalos con precisiones razonables.
+
+
