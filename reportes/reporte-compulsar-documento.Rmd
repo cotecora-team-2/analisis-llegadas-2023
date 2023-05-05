@@ -4,11 +4,14 @@ author: "T. Ortiz, F. González, M. Anzarut"
 output: word_document
 ---
 
-Se examinó el desempeño de distintos métodos para integrar los tres intervalos de estimación. El análisis se hizo simulando 100 muestras de los cómputos distritales para las elecciones estatales para gobernador del 2017 de los dos estados en cuestión. Las pruebas se realizaron con las 100 muestras en tres escenarios de censura, cuando han llegado 50% de las casillas en muestra, 75% de las casillas y 90% de las casillas.
+Se examinó el desempeño de distintos métodos para integrar los tres intervalos de estimación en los estados de Coahuila y Estado de México. Para este análisis se simularon muestras aleatorias usando como marco los cómputos distritales para las elecciones estatales de gobernador del 2017. Las pruebas se realizaron con 100 muestras aleatorias por estado y se consideraron tres escenarios de censura, cuando han llegado 50% de las casillas en muestra, 75% de las casillas y 90% de las casillas.
 
-Las muestras que no han recibido todas las casillas se denominan muestras censuradas. Para llevar a cabo nuestro análisis, fue crucial desarrollar un método para generar muestras censuradas que se asemejen al proceso real de generación de datos. Para ello, ajustamos un modelo de supervivencia para los tiempos de llegada de las casillas en las elecciones federales de 2018. Este modelo fue utilizado para simular muestras con tiempos de llegada y posteriormente censurarlas.
+Las muestras que no han recibido todas las casillas se denominan muestras censuradas. Para llevar a cabo nuestro análisis, fue crucial desarrollar un método para generar muestras censuradas que se asemejen al proceso real de llegada de información. Para ello, ajustamos un modelo de supervivencia para los tiempos de llegada de las casillas en las elecciones federales de 2018, y validamos el ajuste a lo largo de distintos estados que incluyeron Coahuila y Estado de México. Posteriormente utilizamos el modelo para simular muestras con tiempos de llegada y poder así censurarlas.
 
-Dado que los intervalos producidos en el conteo rápido son de al menos 95% de confianza, el objetivo es buscar la mejor forma de integrar las tres estimaciones individuales verificando que el valor real esté contenido en la integración de los intervalos aproximadamente 95% de las veces. Adicionalmente, se verificó también que el ancho de la integración de los intervalos sea razonable.
+Dado que los intervalos producidos en el conteo rápido son de al menos 95% de confianza, el objetivo es buscar la mejor forma de integrar las tres estimaciones individuales, verificando que el valor real esté contenido en el intervalo compulsado aproximadamente 95% de las veces. Adicionalmente, se revisó también que el ancho del intervalo compulsado sea razonable.
+
+A continuación aparece una gráfica con el porcentaje promedio de veces que el valor real cae en el intervalo (a este porcentaje se le conoce como cobertura) para los distintos porcentajes de muestra recibida. Tenemos las coberturas para los tres métodos de estimación individuales, y para dos metodologías de integración: 1) la mediana, que consiste en elegir la mediana de los límites inferiores y la mediana de los límites superiores para cada candidato, y 2) la unión de los intervalos, donde se elige el mínimo de los límites inferiores y el máximo de los superiores.
+
 
 
 
@@ -74,7 +77,7 @@ resultados_finales <- map(1:2, function(i){
 ```{r, echo=FALSE, message = FALSE, warning = FALSE, include=FALSE}
 resumen_tamano_tbl <- resultados_tbl |> 
   group_by(candidato, nombre, estado, corte) |> 
-  summarise(error = mean(LS - LI) / 2, .groups = "drop") |> 
+  summarise(`margen de error` = mean(LS - LI) / 2, .groups = "drop") |> 
   arrange(candidato, nombre, estado) 
 ```
 
@@ -97,8 +100,6 @@ resumen_ecm_tbl <- resultados_tbl |>
 ```
 
 
-A continuación aparece una gráfica con el porcentaje promedio de veces que el valor real cae en el intervalo (a lo que se le conoce como cobertura) para los distintos porcentajes de muestra recibida. Tenemos las coberturas para los tres métodos de estimación individuales, para la mediana y para la unión. 
-
 ```{r, echo = FALSE,  fig.width = 8}
 ggplot(resumen_cobertura_tbl  |> filter(corte != 100, candidato != "PART", candidato != "OTROS"),
        aes(x = corte, y = cobertura, colour = candidato, group = candidato)) +
@@ -113,22 +114,24 @@ ggplot(resumen_cobertura_tbl  |> filter(corte != 100, candidato != "PART", candi
 
 
 
-Podemos observar que, bajo censura, los métodos individuales tienen caídas en la cobertura, sin embargo, la unión de intervalos está por arriba de la cobertura estipulada (95%) en todos los escenarios. 
+Podemos observar que, bajo censura, los métodos individuales tienen caídas en la cobertura, sin embargo, la unión de intervalos está por arriba de la cobertura estipulada (95%) en todos los escenarios.
 
-Queremos verificar también la precisión de los intervalos integrados. A continuación aparece la precisión promedio para los distintos porcentajes de muestra recibida, para los tres métodos de estimación individuales, para la mediana y para la unión. 
+Queremos verificar también el margen de error de los intervalos compulsados, considerando que intervalos más angostos (menor margen de error) son más informativos. A continuación, graficamos el margen de error promedio para los distintos porcentajes de muestra recibida, para los tres métodos de estimación individuales, para la mediana y para la unión.
+
 
 ```{r, echo = FALSE,  fig.width = 8}
 ggplot(resumen_tamano_tbl |> filter(corte != 100, candidato != "PART", candidato != "OTROS")) +
-  geom_point(aes(x = corte, y = error, colour = candidato)) +
-  geom_line(aes(x = corte, y = error, colour = candidato)) +
+  geom_point(aes(x = corte, y = `margen de error`, colour = candidato)) +
+  geom_line(aes(x = corte, y = `margen de error`, colour = candidato)) +
   facet_grid(estado ~ nombre, scales = "free_y")  +
   geom_hline(yintercept = 1.5) +
-  labs(subtitle = "Media de las precisiones") 
+  labs(subtitle = "Media del margen de error") 
 ```
 
-La precisión de la unión de los intervalos es comparable en cada caso con el intervalo más ancho de los tres métodos individuales. Así pues, se decide utilizar la unión para integrar las estimaciones de votación para cada candidato. 
+Observemos que el margen de error de la unión de los intervalos es comparable en cada caso con el intervalo más ancho de los tres métodos individuales. Así pues, se decide utilizar la unión para integrar las estimaciones de votación para cada candidato.
 
-El caso de la participación ciudadana se analiza a continuación. La siguiente tabla muestra las coberturas promedio para la participación. 
+El caso de la participación ciudadana se analiza a continuación. La siguiente tabla muestra las coberturas promedio para la participación.
+
 
 ```{r, echo = FALSE,  fig.width = 3}
 resumen_cobertura_tbl |> filter(corte != 100, candidato=="PART") |>
@@ -137,22 +140,22 @@ resumen_cobertura_tbl |> filter(corte != 100, candidato=="PART") |>
   relocate(corte, .before = Ortiz) |> gt()
 ```
 
-Notamos que la mediana basta para tener coberturas mayores al 95\%. Más aún, analizando la siguiente tabla de precisiones promedio,
-
+Notamos que la mediana basta para tener coberturas mayores al 95\%. Más aún, analizando la siguiente tabla de márgenes de error promedio,
 
 ```{r, echo = FALSE,  fig.width = 3}
 resumen_tamano_tbl |> filter(corte != 100, candidato=="PART") |>
   select(-candidato) |>
-  mutate(error = round(error, 2)) |>
-  pivot_wider(names_from = nombre, values_from = error) |> gt()
+  mutate(`margen de error` = round(`margen de error`, 2)) |>
+  pivot_wider(names_from = nombre, values_from = `margen de error`) |> gt()
 ```
 
-observamos que la mediana produce intervalos considerablemente más angostos que la unión, por lo que se decide utilizar la mediana para integrar el intervalo de participación. 
+observamos que la mediana produce intervalos considerablemente más angostos que la unión, por lo que se decide utilizar la mediana para integrar el intervalo de participación.
 
 ## Conclusiones {-}
  
-En el caso de los votos de los candidatos, se empleará la unión para integrar los intervalos, lo que nos permitirá lograr una cobertura superior al 95% en ambos estados. Además, la precisión obtenida mediante la unión de los intervalos es comparable a la del intervalo más amplio de los cuatro métodos individuales.
+En el caso de los votos de los candidatos, se empleará la unión para generar los intervalos compulsados, lo que nos permitirá lograr una cobertura superior al 95\% en ambos estados. Además, la precisión obtenida mediante la unión de los intervalos es comparable a la del intervalo más amplio de los tres métodos individuales.
 
-En cuanto a la participación ciudadana, utilizaremos la mediana para integrar los tres intervalos, lo que nos permitirá obtener coberturas superiores al 95% e intervalos con precisiones razonables.
+En cuanto a la participación ciudadana, utilizaremos la mediana para integrar los tres intervalos, lo que nos permitirá obtener coberturas superiores al 95\% e intervalos con márgenes de error razonables.
+
 
 
